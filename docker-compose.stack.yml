@@ -1,0 +1,60 @@
+# Production-style stack: Postgres + Steamline app (e.g. Unraid Docker Compose).
+# Set STEAMLINE_IMAGE to your GHCR image (must be lowercase), e.g.:
+#   ghcr.io/yourname/steam-server-dashboard:latest
+# Copy .env.example → .env, set APP_PUBLIC_URL, secrets, then:
+#   docker compose -f docker-compose.stack.yml --env-file .env up -d
+#
+# First-time DB: migrations run on container start (RUN_MIGRATIONS_ON_START=1).
+# Optional seed (once): docker compose -f docker-compose.stack.yml exec app \
+#   sh -c 'npx tsx src/db/seed.ts'  # requires dev tooling — prefer seed from dev against same DB.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: steamline-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-steamline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-steamline}
+    volumes:
+      - steamline_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-steamline} -d ${POSTGRES_DB:-steamline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ${STEAMLINE_IMAGE:-ghcr.io/your-github-user/steam-server-dashboard:latest}
+    container_name: steamline-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${STEAMLINE_HTTP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-steamline}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-steamline}}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your public URL}
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-1}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  steamline_pgdata:

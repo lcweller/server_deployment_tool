@@ -1,0 +1,205 @@
+import { count, desc, eq } from "drizzle-orm";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { DeleteHostButton } from "@/components/delete-host-button";
+import { DeleteInstanceButton } from "@/components/delete-instance-button";
+import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
+import { db } from "@/db";
+import { hosts, serverInstances } from "@/db/schema";
+import { getCurrentUser } from "@/lib/auth/session";
+import { cn } from "@/lib/utils";
+
+const PLATFORM_LABEL: Record<string, string> = {
+  linux: "Linux",
+  macos: "macOS",
+  windows: "Windows (WSL)",
+};
+
+export default async function HostDetailPage({
+  params,
+}: {
+  params: Promise<{ hostId: string }>;
+}) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return null;
+  }
+
+  const { hostId } = await params;
+
+  const rows = await db
+    .select()
+    .from(hosts)
+    .where(eq(hosts.id, hostId))
+    .limit(1);
+
+  const host = rows[0];
+  if (!host || host.userId !== user.id) {
+    notFound();
+  }
+
+  const [{ instanceCount }] = await db
+    .select({ instanceCount: count() })
+    .from(serverInstances)
+    .where(eq(serverInstances.hostId, hostId));
+
+  const recentInstances = await db
+    .select({
+      id: serverInstances.id,
+      name: serverInstances.name,
+      status: serverInstances.status,
+      updatedAt: serverInstances.updatedAt,
+      provisionMessage: serverInstances.provisionMessage,
+      lastError: serverInstances.lastError,
+    })
+    .from(serverInstances)
+    .where(eq(serverInstances.hostId, hostId))
+    .orderBy(desc(serverInstances.updatedAt))
+    .limit(10);
+
+  return (
+    <>
+      <PageHeader
+        title={host.name}
+        description="Host agent details and linked server instances."
+        actions={
+          <>
+            <DeleteHostButton
+              hostId={host.id}
+              hostName={host.name}
+              status={host.status}
+            />
+            <Link
+              href="/hosts"
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+            >
+              ← All hosts
+            </Link>
+          </>
+        }
+      />
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="border-border/80">
+            <CardHeader>
+              <CardTitle className="text-base">Status</CardTitle>
+              <CardDescription>Enrollment and connectivity</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">State</span>
+                <Badge variant="secondary">{host.status}</Badge>
+              </div>
+              {host.platformOs ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Platform</span>
+                  <span>
+                    {PLATFORM_LABEL[host.platformOs] ?? host.platformOs}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Host ID</span>
+                <code className="max-w-[60%] truncate text-xs">{host.id}</code>
+              </div>
+              {host.agentVersion ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Agent</span>
+                  <span className="font-mono text-xs">{host.agentVersion}</span>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No agent version reported yet.
+                </p>
+              )}
+              {host.lastSeenAt ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Last seen</span>
+                  <span>
+                    {host.lastSeenAt.toLocaleString(undefined, {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No heartbeat yet.
+                </p>
+              )}
+              <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+                <span className="text-muted-foreground">Created</span>
+                <span>
+                  {host.createdAt.toLocaleString(undefined, {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80">
+            <CardHeader>
+              <CardTitle className="text-base">Game servers</CardTitle>
+              <CardDescription>
+                Instances on this host ({instanceCount} total). The agent run
+                loop moves them <span className="text-foreground">queued</span>{" "}
+                → <span className="text-foreground">installing</span> →{" "}
+                <span className="text-foreground">running</span> (or failed).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentInstances.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No server instances on this host yet.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {recentInstances.map((inst) => (
+                    <li
+                      key={inst.id}
+                      className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate font-medium">{inst.name}</span>
+                            <Badge variant="outline">{inst.status}</Badge>
+                          </div>
+                        </div>
+                        <DeleteInstanceButton
+                          instanceId={inst.id}
+                          instanceName={inst.name}
+                          status={inst.status}
+                          className="shrink-0"
+                        />
+                      </div>
+                      {inst.lastError ? (
+                        <p className="text-xs text-destructive">{inst.lastError}</p>
+                      ) : inst.provisionMessage ? (
+                        <p className="text-xs text-muted-foreground">
+                          {inst.provisionMessage}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,14 @@
+.git
+.github
+.next
+node_modules
+steamline-data
+*.log
+.env.local
+.env*.local
+npm-debug.log*
+.DS_Store
+.cursor
+terminals
+README.md
+docs/DESIGN_SYSTEM.md

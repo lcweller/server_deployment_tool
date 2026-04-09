@@ -1,0 +1,91 @@
+# Deploy Steamline on Unraid (Docker + GitHub)
+
+This guide assumes you push this repo to **GitHub** and use the included workflow to build and publish the image to **GitHub Container Registry (GHCR)**.
+
+## 1. GitHub: build and publish
+
+1. Create a repository on GitHub and push this codebase (`main` or `master`).
+2. Open **Actions** → enable workflows if prompted.
+3. On each push to `main`/`master`, **Docker build and push** builds the image and pushes to:
+
+   `ghcr.io/<your-github-user-or-org>/<repo-name>:latest`
+
+   Tags also include branch names and `sha-*` for traceability.
+
+4. **Package visibility:** In GitHub → **Packages** → your container image → **Package settings** → set visibility to **Public** (or stay private and log in on Unraid with a PAT that has `read:packages`).
+
+5. **Manual run:** **Actions** → **Docker build and push** → **Run workflow**.
+
+## 2. What you need before going public
+
+| Variable | Purpose |
+|----------|---------|
+| `APP_PUBLIC_URL` | Full public URL with scheme, no trailing slash (e.g. `https://steamline.example.com`). Used for email links and Stripe redirects. |
+| `CRON_SECRET` | Long random string; protect `/api/cron/*` calls. |
+| `DATABASE_URL` | Handled for you if you use `docker-compose.stack.yml` (Postgres service). |
+| Email (optional) | `SMTP_*` for verification mail. |
+| Turnstile (recommended) | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` for login/register. |
+| Stripe (optional) | `STRIPE_*` if you use billing. |
+
+## 3. Unraid: run with Docker Compose (recommended)
+
+1. Install the **Community Applications** plugin if you use templates; Compose is available on recent Unraid versions or via the **Compose** plugin.
+2. On your server, clone or copy the repo (or at least `docker-compose.stack.yml`).
+3. Create `.env` next to the compose file (see `.env.example` in the repo). Set at minimum:
+
+   - `APP_PUBLIC_URL=https://your-domain`
+   - `CRON_SECRET=...`
+   - `POSTGRES_PASSWORD=...` (strong password)
+   - `STEAMLINE_IMAGE=ghcr.io/youruser/steam-server-dashboard:latest` (must match the GHCR path from Actions; **lowercase**)
+   - `STEAMLINE_HTTP_PORT=3000` (or another host port)
+
+4. Start:
+
+   ```bash
+   docker compose -f docker-compose.stack.yml --env-file .env up -d
+   ```
+
+5. Migrations run on app startup when `RUN_MIGRATIONS_ON_START=1` (default).
+
+## 4. Unraid: single “Add Container” (UI only)
+
+If you prefer the Docker UI without Compose:
+
+1. **Add Container** → **Advanced view**.
+2. **Repository:** `ghcr.io/youruser/steam-server-dashboard:latest`
+3. Add **extra parameter** → **Port** `3000:3000` (or map host `80`/`443` via reverse proxy).
+4. Add **Environment variables** matching what `docker-compose.stack.yml` passes to `app` (you still need a **Postgres** container and `DATABASE_URL` pointing to it, e.g. `postgresql://user:pass@steamline-postgres:5432/steamline` on a custom network).
+
+Compose is simpler because Postgres + app + healthchecks are defined together.
+
+## 5. HTTPS and public URL
+
+Point a DNS A/AAAA record at your Unraid public IP. Put **Nginx Proxy Manager**, **SWAG**, or another reverse proxy in front of port 3000, issue TLS certs, and set `APP_PUBLIC_URL` to the **https** URL.
+
+## 6. Updates (force new container)
+
+After each `git push` to `main`, GitHub Actions publishes a new `:latest` (and other tags).
+
+On Unraid:
+
+```bash
+cd /path/to/compose
+docker compose -f docker-compose.stack.yml pull app
+docker compose -f docker-compose.stack.yml --env-file .env up -d
+```
+
+Or from Docker UI: **Check for updates** → **Apply update** if your template tracks `:latest`.
+
+## 7. Smoke test locally (optional)
+
+On a dev machine with Docker:
+
+```powershell
+npm run verify:smoke
+```
+
+That runs `npm run build`, optional migrations against `DATABASE_URL`, and `docker build -t steamline:local .`.
+
+## 8. Game agents (Linux hosts)
+
+The **dashboard** container does not run SteamCMD for your players’ servers. Dedicated hosts still run the **agent** from this repo (or a packaged agent) with `STEAMLINE_API_KEY`, pointed at your public `APP_PUBLIC_URL`.
