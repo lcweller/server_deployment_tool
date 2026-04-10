@@ -6,17 +6,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { RemoteInstance } from "./provision";
+import { instanceInstallDir } from "./paths";
 
 function base(apiBase: string) {
   return apiBase.replace(/\/$/, "");
-}
-
-function instanceDir(instanceId: string): string {
-  return path.join(
-    process.env.STEAMLINE_INSTANCE_ROOT ??
-      path.join(process.cwd(), "steamline-data", "instances"),
-    instanceId
-  );
 }
 
 function steamlineDataRoot(): string {
@@ -27,7 +20,7 @@ function steamlineDataRoot(): string {
 }
 
 function killPidFileIfAny(instanceId: string): void {
-  const pidFile = path.join(instanceDir(instanceId), "steamline.pid");
+  const pidFile = path.join(instanceInstallDir(instanceId), "steamline.pid");
   if (!fs.existsSync(pidFile)) {
     return;
   }
@@ -63,10 +56,11 @@ async function postPurgeComplete(
     },
     body: JSON.stringify({}),
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`purge-complete ${res.status}: ${t}`);
+  if (res.ok || res.status === 404) {
+    return;
   }
+  const t = await res.text();
+  throw new Error(`purge-complete ${res.status}: ${t}`);
 }
 
 export async function cleanupPendingDelete(
@@ -79,7 +73,7 @@ export async function cleanupPendingDelete(
   }
   console.error(`[steamline] deleting instance "${inst.name}" (${inst.id})…`);
   killPidFileIfAny(inst.id);
-  const dir = instanceDir(inst.id);
+  const dir = instanceInstallDir(inst.id);
   try {
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });

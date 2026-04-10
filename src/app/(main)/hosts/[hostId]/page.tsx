@@ -2,9 +2,11 @@ import { count, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { DashboardPoller } from "@/components/dashboard-poller";
 import { DeleteHostButton } from "@/components/delete-host-button";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
 import { HostResourcesPanel } from "@/components/host-resources-panel";
+import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -70,6 +72,7 @@ export default async function HostDetailPage({
 
   return (
     <>
+      <DashboardPoller intervalMs={8000} />
       <PageHeader
         title={host.name}
         description="Agent status, live resource usage, and servers on this machine."
@@ -153,6 +156,15 @@ export default async function HostDetailPage({
               ) : (
                 <p className="text-xs text-muted-foreground">No heartbeat yet.</p>
               )}
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                This page refreshes every ~8s while open. If “Last heartbeat”
+                never changes after the first line, the agent is not reaching the
+                API — check{" "}
+                <code className="rounded bg-muted px-1">~/.steamline/agent.log</code>{" "}
+                on the host and that{" "}
+                <code className="rounded bg-muted px-1">APP_PUBLIC_URL</code> is
+                reachable from that machine.
+              </p>
               <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
                 <span className="text-muted-foreground">Created</span>
                 <span>
@@ -185,11 +197,11 @@ export default async function HostDetailPage({
                   .
                 </p>
               ) : (
-                <ul className="space-y-2">
+                <ul className="space-y-4">
                   {recentInstances.map((inst) => (
                     <li
                       key={inst.id}
-                      className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+                      className="rounded-md border border-border/60 px-3 py-3 text-sm"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
@@ -205,13 +217,21 @@ export default async function HostDetailPage({
                           className="shrink-0"
                         />
                       </div>
-                      {inst.lastError ? (
-                        <p className="text-xs text-destructive">{inst.lastError}</p>
-                      ) : inst.provisionMessage ? (
-                        <p className="text-xs text-muted-foreground">
-                          {inst.provisionMessage}
-                        </p>
-                      ) : null}
+                      <div className="mt-2">
+                        <InstanceDeployProgress
+                          instanceId={inst.id}
+                          initial={{
+                            id: inst.id,
+                            name: inst.name,
+                            status: inst.status,
+                            provisionMessage: inst.provisionMessage,
+                            lastError: inst.lastError,
+                            updatedAt: inst.updatedAt.toISOString(),
+                            catalogName: null,
+                            hostName: null,
+                          }}
+                        />
+                      </div>
                     </li>
                   ))}
                 </ul>

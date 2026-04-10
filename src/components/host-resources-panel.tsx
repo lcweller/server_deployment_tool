@@ -25,11 +25,13 @@ export function HostResourcesPanel({ metrics, lastSeenAt }: Props) {
           Waiting for host metrics…
         </div>
         <p className="text-xs text-muted-foreground">
-          Start the agent on the host:{" "}
+          The one-line installer normally starts the agent in the background. If
+          this host was enrolled but the process is not running, SSH once and run:{" "}
           <code className="rounded bg-muted px-1">
-            cd ~/.steamline && node steamline-agent.cjs run &lt;your-dashboard-url&gt;
+            cd ~/.steamline && nohup node steamline-agent.cjs run
+            &lt;dashboard-url&gt; &gt;&gt; agent.log 2&gt;&amp;1 &amp;
           </code>
-          . CPU, memory, and disk appear after the first heartbeat.
+          . Metrics appear after the first successful heartbeat.
         </p>
         <div className="space-y-3 opacity-50">
           <div className="h-2.5 w-full rounded-full bg-muted" />

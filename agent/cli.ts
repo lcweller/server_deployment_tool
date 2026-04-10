@@ -65,9 +65,8 @@ async function enroll(baseUrl: string, token: string) {
   );
   const u = baseUrl.replace(/\/$/, "");
   console.error(
-    `\nRun loop (heartbeats + provisioning from the dashboard):\n` +
-      `  cd ~/.steamline && node steamline-agent.cjs run ${u}\n` +
-      `(or use the dashboard one-line curl installer — it writes steamline-agent.env for you.)`
+    `\nThe dashboard install script starts the agent in the background after enroll.\n` +
+      `Manual run (if needed): cd ~/.steamline && node steamline-agent.cjs run ${u}`
   );
 }
 

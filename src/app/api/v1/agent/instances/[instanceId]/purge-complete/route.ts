@@ -9,6 +9,7 @@ type RouteCtx = { params: Promise<{ instanceId: string }> };
 
 /**
  * Agent finished on-disk cleanup — remove instance row (logs cascade).
+ * Idempotent: repeated calls succeed if the row is already gone or not pending_delete.
  */
 export async function POST(request: Request, ctx: RouteCtx) {
   const agent = await authenticateAgentApiKey(request);
@@ -25,15 +26,24 @@ export async function POST(request: Request, ctx: RouteCtx) {
     .limit(1);
 
   const inst = rows[0];
-  if (!inst || inst.hostId !== agent.host.id) {
+  if (!inst) {
+    return NextResponse.json({
+      ok: true,
+      deleted: instanceId,
+      already: true,
+    });
+  }
+
+  if (inst.hostId !== agent.host.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   if (inst.status !== "pending_delete") {
-    return NextResponse.json(
-      { error: "Instance is not pending deletion" },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      ok: true,
+      instanceId,
+      alreadyPurged: true,
+    });
   }
 
   await db

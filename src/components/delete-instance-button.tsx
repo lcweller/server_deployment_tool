@@ -27,9 +27,41 @@ export function DeleteInstanceButton({
 
   if (status === "pending_delete") {
     return (
-      <span className={cn("text-xs text-muted-foreground", className)}>
-        Deleting…
-      </span>
+      <div className={cn("flex flex-col items-end gap-1", className)}>
+        <span className="text-xs text-muted-foreground">Deleting…</span>
+        <button
+          type="button"
+          className="text-[11px] text-amber-600 underline underline-offset-2 hover:text-amber-500 dark:text-amber-400"
+          disabled={busy}
+          onClick={async () => {
+            const ok = window.confirm(
+              `Remove “${instanceName}” from the dashboard only?\n\nUse this if deletion is stuck (agent offline). Game files may still exist on the host under steamline-data/instances — delete them manually if needed.`
+            );
+            if (!ok) {
+              return;
+            }
+            setBusy(true);
+            try {
+              const res = await fetch(
+                `/api/instances/${instanceId}/finalize-removal`,
+                { method: "POST" }
+              );
+              const j = (await res.json().catch(() => ({}))) as {
+                error?: string;
+              };
+              if (!res.ok) {
+                alert(j.error ?? `Could not finalize (${res.status})`);
+                return;
+              }
+              router.refresh();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "…" : "Stuck? Remove from dashboard"}
+        </button>
+      </div>
     );
   }
 

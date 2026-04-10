@@ -3,9 +3,9 @@
  */
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
-import * as path from "node:path";
 
 import { ensureSteamCmd } from "./steamcmd-bootstrap";
+import { instanceInstallDir } from "./paths";
 import { writeSteamlinePid } from "./pidfile";
 
 export type RemoteInstance = {
@@ -76,9 +76,7 @@ function sleep(ms: number) {
 }
 
 function instanceDataDir(instanceId: string): string {
-  const root =
-    process.env.STEAMLINE_INSTANCE_ROOT ??
-    path.join(process.cwd(), "steamline-data", "instances", instanceId);
+  const root = instanceInstallDir(instanceId);
   fs.mkdirSync(root, { recursive: true });
   return root;
 }

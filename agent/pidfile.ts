@@ -6,15 +6,10 @@ import * as path from "node:path";
 
 import type { ChildProcess } from "node:child_process";
 
-function instanceRoot(instanceId: string): string {
-  return (
-    process.env.STEAMLINE_INSTANCE_ROOT ??
-    path.join(process.cwd(), "steamline-data", "instances", instanceId)
-  );
-}
+import { instanceInstallDir } from "./paths";
 
 export function pidFilePath(instanceId: string): string {
-  return path.join(instanceRoot(instanceId), "steamline.pid");
+  return path.join(instanceInstallDir(instanceId), "steamline.pid");
 }
 
 export function writeSteamlinePid(instanceId: string, child: ChildProcess): void {

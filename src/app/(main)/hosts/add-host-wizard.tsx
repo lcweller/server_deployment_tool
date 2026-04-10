@@ -44,7 +44,7 @@ const OS_OPTIONS: {
   },
 ];
 
-function dashboardBaseUrl(): string {
+function clientOriginFallback(): string {
   if (typeof window === "undefined") {
     return "";
   }
@@ -73,6 +73,11 @@ export function AddHostWizard() {
   const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
   const [enrolled, setEnrolled] = useState(false);
   const [pollTimedOut, setPollTimedOut] = useState(false);
+  /** Resolved after GET /api/config/dashboard-url — never use raw LAN origin for remote hosts when APP_PUBLIC_URL is set. */
+  const [installBaseUrl, setInstallBaseUrl] = useState<string | null>(null);
+  const [installUrlLoading, setInstallUrlLoading] = useState(false);
+  const [usedPublicAppUrl, setUsedPublicAppUrl] = useState(false);
+  const [showPublicUrlHint, setShowPublicUrlHint] = useState(false);
 
   const reset = useCallback(() => {
     setStep(1);
@@ -84,6 +89,10 @@ export function AddHostWizard() {
     setEnrollmentToken(null);
     setEnrolled(false);
     setPollTimedOut(false);
+    setInstallBaseUrl(null);
+    setInstallUrlLoading(false);
+    setUsedPublicAppUrl(false);
+    setShowPublicUrlHint(false);
   }, []);
 
   useEffect(() => {
@@ -155,18 +164,66 @@ export function AddHostWizard() {
     return () => window.clearInterval(t);
   }, [step, createdHostId, enrolled, router]);
 
-  const base = dashboardBaseUrl();
+  useEffect(() => {
+    if (step !== 3) {
+      return;
+    }
+    setInstallUrlLoading(true);
+    setInstallBaseUrl(null);
+    let cancelled = false;
+    fetch("/api/config/dashboard-url")
+      .then(async (res) => {
+        const j = (await res.json()) as {
+          dashboardUrl?: string;
+          usedPublicEnv?: boolean;
+        };
+        if (cancelled) {
+          return;
+        }
+        const u = j.dashboardUrl?.replace(/\/$/, "").trim();
+        if (u) {
+          setInstallBaseUrl(u);
+          setUsedPublicAppUrl(Boolean(j.usedPublicEnv));
+        } else {
+          setInstallBaseUrl(clientOriginFallback());
+          setUsedPublicAppUrl(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInstallBaseUrl(clientOriginFallback());
+          setUsedPublicAppUrl(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setInstallUrlLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step]);
+
+  useEffect(() => {
+    if (!usedPublicAppUrl || !installBaseUrl) {
+      setShowPublicUrlHint(false);
+      return;
+    }
+    setShowPublicUrlHint(clientOriginFallback() !== installBaseUrl);
+  }, [usedPublicAppUrl, installBaseUrl]);
+
   const shellCmd =
-    enrollmentToken && base
-      ? buildEnrollShellCommand(base, enrollmentToken)
+    enrollmentToken && installBaseUrl
+      ? buildEnrollShellCommand(installBaseUrl, enrollmentToken)
       : "";
 
   const osNote =
     platformOs === "windows"
       ? "Install WSL 2 (Ubuntu), install Node.js 18+ inside WSL, then paste the command in that Linux shell."
       : platformOs === "macos"
-        ? "Requires Node.js 18+ and curl. The installer downloads the agent into ~/.steamline/."
-        : "Requires Node.js 18+ and curl on the host. The installer downloads the agent into ~/.steamline/ — no git clone.";
+        ? "Requires Node.js 18+ and curl. One command enrolls and starts the agent in the background."
+        : "Requires Node.js 18+ and curl. One command downloads the agent, enrolls it, and starts the run loop in the background — no second SSH step.";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -180,8 +237,9 @@ export function AddHostWizard() {
         <SheetHeader>
           <SheetTitle>Add host</SheetTitle>
           <SheetDescription>
-            Name the machine, pick an OS, then run one command on the host to
-            enroll the agent.
+            Name the machine, pick an OS, then run the one-line installer on the
+            game host. It enrolls the agent, starts it in the background, and
+            you do not need to SSH again for normal operation.
           </SheetDescription>
         </SheetHeader>
 
@@ -283,10 +341,35 @@ export function AddHostWizard() {
                   <div className="rounded-lg border border-border/80 bg-muted/20 p-3 text-xs text-muted-foreground">
                     <p>{osNote}</p>
                   </div>
+                  {showPublicUrlHint ? (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950 dark:text-amber-100">
+                      <p className="font-medium text-foreground">
+                        Public URL for this command
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        The command uses{" "}
+                        <span className="font-mono text-foreground">
+                          {installBaseUrl}
+                        </span>{" "}
+                        (from <code className="rounded bg-muted px-1">APP_PUBLIC_URL</code>)
+                        so remote game servers can reach Steamline. Browsing via a
+                        LAN address is fine; the host still needs a URL it can route
+                        to — not only{" "}
+                        <span className="font-mono">192.168.x.x</span>.
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="space-y-2">
-                    <Label>Run on the host</Label>
+                    <Label>Run once on the game host</Label>
                     <div className="relative rounded-md border border-border/80 bg-muted/30 p-3 font-mono text-xs leading-relaxed break-all">
-                      {shellCmd || "…"}
+                      {installUrlLoading && !installBaseUrl ? (
+                        <span className="inline-flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Resolving dashboard URL…
+                        </span>
+                      ) : (
+                        shellCmd || "…"
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -294,7 +377,7 @@ export function AddHostWizard() {
                         variant="secondary"
                         size="sm"
                         className="gap-1"
-                        disabled={!shellCmd}
+                        disabled={!shellCmd || installUrlLoading}
                         onClick={async () => {
                           if (shellCmd) {
                             await navigator.clipboard.writeText(shellCmd);

@@ -2,7 +2,9 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 
 import { CreateInstanceForm } from "@/app/(main)/servers/create-instance-form";
+import { DashboardPoller } from "@/components/dashboard-poller";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
+import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -77,6 +79,7 @@ export default async function ServersPage({
 
   return (
     <>
+      <DashboardPoller intervalMs={8000} />
       <PageHeader
         title="Servers"
         description="Create Steam dedicated servers on your enrolled hosts. The agent installs SteamCMD when needed and provisions from the catalog."
@@ -250,19 +253,20 @@ export default async function ServersPage({
                         {row.hostName ?? "Unknown host"}
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-1 text-xs text-muted-foreground">
-                      {row.lastError ? (
-                        <p className="text-destructive">{row.lastError}</p>
-                      ) : row.provisionMessage ? (
-                        <p>{row.provisionMessage}</p>
-                      ) : null}
-                      <p>
-                        Updated{" "}
-                        {row.updatedAt.toLocaleString(undefined, {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </p>
+                    <CardContent className="pt-0">
+                      <InstanceDeployProgress
+                        instanceId={row.id}
+                        initial={{
+                          id: row.id,
+                          name: row.name,
+                          status: row.status,
+                          provisionMessage: row.provisionMessage,
+                          lastError: row.lastError,
+                          updatedAt: row.updatedAt.toISOString(),
+                          catalogName: row.catalogName,
+                          hostName: row.hostName,
+                        }}
+                      />
                     </CardContent>
                   </Card>
                 </li>
