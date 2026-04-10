@@ -3,10 +3,35 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
+import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { hosts, serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
 
+const metricsSchema = z
+  .object({
+    hostname: z.string().max(256).optional(),
+    platform: z.string().max(32).optional(),
+    cpuModel: z.string().max(512).optional(),
+    cpuCores: z.number().int().min(1).max(4096).optional(),
+    loadAvg1m: z.number().min(0).max(1e6).optional(),
+    cpuEstimatePercent: z.number().min(0).max(100).optional(),
+    memTotalBytes: z.number().nonnegative().optional(),
+    memUsedBytes: z.number().nonnegative().optional(),
+    memUsedPercent: z.number().min(0).max(100).optional(),
+    diskPath: z.string().max(512).optional(),
+    diskTotalBytes: z.number().nonnegative().optional(),
+    diskUsedBytes: z.number().nonnegative().optional(),
+    diskFreeBytes: z.number().nonnegative().optional(),
+    diskUsedPercent: z.number().min(0).max(100).optional(),
+  })
+  .strict();
+
 const bodySchema = z.object({
+  agentVersion: z.string().max(64).optional(),
+  metrics: metricsSchema.optional(),
+});
+
+const minimalBodySchema = z.object({
   agentVersion: z.string().max(64).optional(),
 });
 
@@ -26,8 +51,24 @@ export async function POST(request: Request) {
     json = {};
   }
 
-  const parsed = bodySchema.safeParse(json);
-  const agentVersion = parsed.success ? parsed.data.agentVersion : undefined;
+  let agentVersion: string | undefined;
+  let metricsSnapshot: HostMetricsSnapshot | undefined;
+
+  const full = bodySchema.safeParse(json);
+  if (full.success) {
+    agentVersion = full.data.agentVersion;
+    if (full.data.metrics) {
+      metricsSnapshot = {
+        ...full.data.metrics,
+        receivedAt: new Date().toISOString(),
+      };
+    }
+  } else {
+    const minimal = minimalBodySchema.safeParse(json);
+    if (minimal.success) {
+      agentVersion = minimal.data.agentVersion;
+    }
+  }
 
   await db
     .update(hosts)
@@ -35,6 +76,7 @@ export async function POST(request: Request) {
       lastSeenAt: new Date(),
       status: "online",
       ...(agentVersion ? { agentVersion } : {}),
+      ...(metricsSnapshot ? { hostMetrics: metricsSnapshot } : {}),
     })
     .where(eq(hosts.id, agent.host.id));
 

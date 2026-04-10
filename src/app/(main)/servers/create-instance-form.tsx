@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -79,66 +80,92 @@ export function CreateInstanceForm({
 
   if (eligibleHosts.length === 0 || catalog.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
-        {eligibleHosts.length === 0
-          ? "You need at least one enrolled host (not pending) before creating a server."
-          : "Add catalog titles (seed or run catalog ingest) before creating a server."}
+      <div className="rounded-xl border border-dashed border-border/80 bg-muted/15 p-6">
+        <p className="text-sm font-medium text-foreground">
+          {eligibleHosts.length === 0
+            ? "Connect a host first"
+            : "Catalog is empty"}
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {eligibleHosts.length === 0
+            ? "Add a host and run the one-line install on your game machine. When enrollment completes, return here to deploy."
+            : "The dashboard normally ships with starter titles after deploy. If you still see this, open the catalog or ask your operator to run ingest."}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/hosts"
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+          >
+            Hosts
+          </Link>
+          <Link
+            href="/catalog"
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+          >
+            Catalog
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex max-w-xl flex-col gap-4">
-      <div className="space-y-2">
-        <Label htmlFor="srv-name">Server name</Label>
-        <Input
-          id="srv-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. EU — Project Zomboid"
-          required
-        />
+    <form
+      onSubmit={onSubmit}
+      className="max-w-xl rounded-xl border border-border/80 bg-card/30 p-6 shadow-sm"
+    >
+      <div className="flex flex-col gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="srv-name">Server name</Label>
+          <Input
+            id="srv-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. EU — Project Zomboid"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="srv-host">Host</Label>
+          <select
+            id="srv-host"
+            className={selectClass}
+            value={hostId}
+            onChange={(e) => setHostId(e.target.value)}
+            required
+          >
+            {eligibleHosts.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name} ({h.status})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="srv-cat">Game (catalog)</Label>
+          <select
+            id="srv-cat"
+            className={selectClass}
+            value={catalogEntryId}
+            onChange={(e) => setCatalogEntryId(e.target.value)}
+            required
+          >
+            {catalog.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} (App {c.steamAppId})
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button type="submit" disabled={pending} className="w-full sm:w-auto">
+          {pending ? "Creating…" : "Create server"}
+        </Button>
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="srv-host">Host</Label>
-        <select
-          id="srv-host"
-          className={selectClass}
-          value={hostId}
-          onChange={(e) => setHostId(e.target.value)}
-          required
-        >
-          {eligibleHosts.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.name} ({h.status})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="srv-cat">Catalog title</Label>
-        <select
-          id="srv-cat"
-          className={selectClass}
-          value={catalogEntryId}
-          onChange={(e) => setCatalogEntryId(e.target.value)}
-          required
-        >
-          {catalog.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} (App {c.steamAppId})
-            </option>
-          ))}
-        </select>
-      </div>
-      <Button type="submit" disabled={pending}>
-        {pending ? "Creating…" : "Create server"}
-      </Button>
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
     </form>
   );
 }

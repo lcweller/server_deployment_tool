@@ -17,6 +17,7 @@ import {
   fetchHostSelf,
   runHostUninstall,
 } from "./cleanup";
+import { collectHeartbeatMetrics } from "./collect-metrics";
 import { loadSteamlineApiKeyEarly } from "./load-api-key";
 import { provisionInstance, type RemoteInstance } from "./provision";
 
@@ -79,10 +80,19 @@ async function heartbeatOnce(
   baseUrl: string
 ): Promise<{ ok: boolean; data?: HeartbeatJson; text: string }> {
   const url = `${baseUrl.replace(/\/$/, "")}/api/v1/agent/heartbeat`;
+  let metrics: ReturnType<typeof collectHeartbeatMetrics> | undefined;
+  try {
+    metrics = collectHeartbeatMetrics();
+  } catch {
+    metrics = undefined;
+  }
   const res = await fetch(url, {
     method: "POST",
     headers: bearerHeaders(),
-    body: JSON.stringify({ agentVersion: "steamline-agent/0.1.0" }),
+    body: JSON.stringify({
+      agentVersion: "steamline-agent/0.1.0",
+      ...(metrics ? { metrics } : {}),
+    }),
   });
   const text = await res.text();
   if (!res.ok) {

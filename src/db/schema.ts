@@ -1,3 +1,4 @@
+import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -88,6 +89,8 @@ export const hosts = pgTable("hosts", {
   status: text("status").notNull().default("pending"),
   enrollmentTokenHash: text("enrollment_token_hash").unique(),
   agentVersion: text("agent_version"),
+  /** Latest resource snapshot from agent heartbeat (CPU / RAM / disk). */
+  hostMetrics: jsonb("host_metrics").$type<HostMetricsSnapshot | null>(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   updateMode: text("update_mode").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true })

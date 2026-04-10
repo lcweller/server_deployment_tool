@@ -32,6 +32,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/scripts/run-migrations.cjs ./scripts/run-migrations.cjs
+COPY --from=builder /app/scripts/seed-catalog-if-empty.cjs ./scripts/seed-catalog-if-empty.cjs
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 
 # Next standalone trace omits postgres/drizzle — add for runtime migrations.

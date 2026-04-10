@@ -65,6 +65,8 @@ npm run dev
 
 Push to GitHub → **Actions** builds and pushes **`ghcr.io/<user>/<repo>:latest`**. On Unraid, use **`docker-compose.stack.yml`** + `.env` (see **[docs/DEPLOY-UNRAID.md](docs/DEPLOY-UNRAID.md)**). Pull a new image and recreate the container to update.
 
+The container entrypoint applies migrations, then **seeds starter catalog rows** if `catalog_entries` is empty (`RUN_CATALOG_SEED_ON_START`, default on). Agents send **CPU / RAM / disk** metrics with each heartbeat (`host_metrics` column).
+
 ## Cron (self-hosted)
 
 Call periodically (e.g. Unraid user script + `curl`):

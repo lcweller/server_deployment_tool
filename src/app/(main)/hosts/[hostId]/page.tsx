@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { DeleteHostButton } from "@/components/delete-host-button";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
+import { HostResourcesPanel } from "@/components/host-resources-panel";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -71,7 +72,7 @@ export default async function HostDetailPage({
     <>
       <PageHeader
         title={host.name}
-        description="Host agent details and linked server instances."
+        description="Agent status, live resource usage, and servers on this machine."
         actions={
           <>
             <DeleteHostButton
@@ -89,11 +90,28 @@ export default async function HostDetailPage({
         }
       />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-        <div className="grid gap-4 md:grid-cols-2">
+        {host.status !== "pending" ? (
+          <HostResourcesPanel
+            metrics={host.hostMetrics}
+            lastSeenAt={host.lastSeenAt}
+          />
+        ) : (
+          <Card className="border-dashed border-amber-500/40 bg-amber-500/[0.06]">
+            <CardHeader>
+              <CardTitle className="text-base">Enrollment pending</CardTitle>
+              <CardDescription>
+                Run the install command from <strong>Add host</strong>. Metrics
+                will appear here after the agent connects.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
+
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card className="border-border/80">
             <CardHeader>
-              <CardTitle className="text-base">Status</CardTitle>
-              <CardDescription>Enrollment and connectivity</CardDescription>
+              <CardTitle className="text-base">Connection</CardTitle>
+              <CardDescription>Enrollment and identity</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex items-center justify-between gap-2">
@@ -124,7 +142,7 @@ export default async function HostDetailPage({
               )}
               {host.lastSeenAt ? (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Last seen</span>
+                  <span className="text-muted-foreground">Last heartbeat</span>
                   <span>
                     {host.lastSeenAt.toLocaleString(undefined, {
                       dateStyle: "short",
@@ -133,9 +151,7 @@ export default async function HostDetailPage({
                   </span>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  No heartbeat yet.
-                </p>
+                <p className="text-xs text-muted-foreground">No heartbeat yet.</p>
               )}
               <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
                 <span className="text-muted-foreground">Created</span>
@@ -153,16 +169,20 @@ export default async function HostDetailPage({
             <CardHeader>
               <CardTitle className="text-base">Game servers</CardTitle>
               <CardDescription>
-                Instances on this host ({instanceCount} total). The agent run
-                loop moves them <span className="text-foreground">queued</span>{" "}
-                → <span className="text-foreground">installing</span> →{" "}
-                <span className="text-foreground">running</span> (or failed).
+                Instances on this host ({instanceCount} total). The agent moves
+                them <span className="text-foreground">queued</span> →{" "}
+                <span className="text-foreground">installing</span> →{" "}
+                <span className="text-foreground">running</span>.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {recentInstances.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No server instances on this host yet.
+                  No server instances yet.{" "}
+                  <Link href="/servers" className="text-primary underline">
+                    Create one in Servers
+                  </Link>
+                  .
                 </p>
               ) : (
                 <ul className="space-y-2">

@@ -36,6 +36,13 @@
       "when": 1775765000000,
       "tag": "0004_instance_provision_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775766000000,
+      "tag": "0005_host_metrics",
+      "breakpoints": true
     }
   ]
 }

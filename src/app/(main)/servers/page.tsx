@@ -15,6 +15,8 @@ import {
 import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { cn } from "@/lib/utils";
+import { Cpu, Gamepad2, Server } from "lucide-react";
 
 export default async function ServersPage({
   searchParams,
@@ -70,25 +72,137 @@ export default async function ServersPage({
       .orderBy(desc(catalogEntries.popularityScore)),
   ]);
 
+  const enrolledHosts = hostRows.filter((h) => h.status !== "pending");
+  const canCreate = enrolledHosts.length > 0 && catalogRows.length > 0;
+
   return (
     <>
       <PageHeader
         title="Servers"
-        description="Create a server on an enrolled host. The agent downloads SteamCMD if needed and provisions with the real Steam client (set STEAMLINE_PROVISION_STUB=1 only to skip downloads for quick tests)."
+        description="Create Steam dedicated servers on your enrolled hosts. The agent installs SteamCMD when needed and provisions from the catalog."
       />
       <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium text-foreground">
-            New server
-          </h2>
-          <p className="max-w-xl text-xs text-muted-foreground">
-            New servers start as <span className="text-foreground">queued</span>.
-            On the host,{" "}
-            <code className="rounded bg-muted px-1">npm run agent -- run &lt;URL&gt;</code>{" "}
-            picks them up: <span className="text-foreground">installing</span> →{" "}
-            <span className="text-foreground">running</span> (real SteamCMD unless{" "}
-            <code className="rounded bg-muted px-1">STEAMLINE_PROVISION_STUB=1</code>).
-          </p>
+        <section className="grid gap-3 sm:grid-cols-3">
+          <Card
+            className={cn(
+              "border-border/80",
+              enrolledHosts.length > 0 && "border-primary/25 bg-primary/[0.03]"
+            )}
+          >
+            <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
+                <Cpu className="size-4 text-muted-foreground" aria-hidden />
+              </span>
+              <div>
+                <CardTitle className="text-sm font-medium">Hosts ready</CardTitle>
+                <CardDescription className="text-xs">
+                  Enrolled & online
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">
+                {enrolledHosts.length}
+              </p>
+              <Link
+                href="/hosts"
+                className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Manage hosts
+              </Link>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              "border-border/80",
+              catalogRows.length > 0 && "border-primary/25 bg-primary/[0.03]"
+            )}
+          >
+            <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
+                <Gamepad2 className="size-4 text-muted-foreground" aria-hidden />
+              </span>
+              <div>
+                <CardTitle className="text-sm font-medium">Catalog titles</CardTitle>
+                <CardDescription className="text-xs">
+                  Games you can deploy
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">
+                {catalogRows.length}
+              </p>
+              <Link
+                href="/catalog"
+                className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Browse catalog
+              </Link>
+            </CardContent>
+          </Card>
+          <Card className="border-border/80">
+            <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
+                <Server className="size-4 text-muted-foreground" aria-hidden />
+              </span>
+              <div>
+                <CardTitle className="text-sm font-medium">Your servers</CardTitle>
+                <CardDescription className="text-xs">Instances</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">
+                {instanceRows.length}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Queued → installing → running
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+
+        {!canCreate ? (
+          <Card className="border-dashed border-primary/30 bg-primary/[0.04]">
+            <CardHeader>
+              <CardTitle className="text-base">Finish one-touch setup</CardTitle>
+              <CardDescription className="text-sm leading-relaxed">
+                You need at least one{" "}
+                <strong className="text-foreground">enrolled host</strong> and one{" "}
+                <strong className="text-foreground">catalog title</strong>. After
+                installing the agent, the control plane seeds starter catalog
+                entries on deploy — refresh if you just updated. Then create a
+                server below.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Link
+                href="/hosts"
+                className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted/50"
+              >
+                Open hosts
+              </Link>
+              <Link
+                href="/catalog"
+                className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted/50"
+              >
+                Open catalog
+              </Link>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Deploy a server</h2>
+            <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+              Pick a name, host, and game. The agent run loop on the host picks up{" "}
+              <span className="text-foreground">queued</span> work and runs SteamCMD
+              unless you use{" "}
+              <code className="rounded bg-muted px-1">STEAMLINE_PROVISION_STUB=1</code>{" "}
+              for dry runs.
+            </p>
+          </div>
           <CreateInstanceForm
             hosts={hostRows}
             catalog={catalogRows}
@@ -97,7 +211,7 @@ export default async function ServersPage({
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-foreground">Your servers</h2>
+          <h2 className="text-sm font-semibold text-foreground">Your servers</h2>
           {instanceRows.length === 0 ? (
             <Card className="border-border/80 border-dashed">
               <CardHeader>
@@ -107,8 +221,7 @@ export default async function ServersPage({
                   <Link href="/catalog" className="text-primary underline">
                     catalog
                   </Link>{" "}
-                  and click <span className="font-medium">Deploy</span> on a
-                  title.
+                  and click <span className="font-medium">Deploy</span> on a title.
                 </CardDescription>
               </CardHeader>
             </Card>
