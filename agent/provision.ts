@@ -4,7 +4,11 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 
-import { ensureSteamCmd } from "./steamcmd-bootstrap";
+import {
+  collectSteamCmdDiagnostics,
+  ensureSteamCmd,
+  type SteamCmdLaunch,
+} from "./steamcmd-bootstrap";
 import { instanceInstallDir } from "./paths";
 import { writeSteamlinePid } from "./pidfile";
 
@@ -15,6 +19,8 @@ export type RemoteInstance = {
   steamAppId: string | null;
   slug: string | null;
 };
+
+const LOG_CHUNK = 450;
 
 function base(baseUrl: string) {
   return baseUrl.replace(/\/$/, "");
@@ -71,6 +77,18 @@ async function postLogs(
   }
 }
 
+/** Agent API accepts up to 500 lines per POST — chunk for long SteamCMD output. */
+async function postLogLines(
+  apiBase: string,
+  bearer: string,
+  instanceId: string,
+  lines: string[]
+): Promise<void> {
+  for (let i = 0; i < lines.length; i += LOG_CHUNK) {
+    await postLogs(apiBase, bearer, instanceId, lines.slice(i, i + LOG_CHUNK));
+  }
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -81,11 +99,14 @@ function instanceDataDir(instanceId: string): string {
   return root;
 }
 
-async function runSteamCmdInstall(
+const DEFAULT_PATH =
+  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
+async function runSteamCmdWithCapture(
+  launch: SteamCmdLaunch,
   appId: string,
   installDir: string
-): Promise<{ code: number; tail: string[] }> {
-  const launch = await ensureSteamCmd();
+): Promise<{ code: number; allLines: string[] }> {
   const steamArgs = [
     "+force_install_dir",
     installDir,
@@ -102,7 +123,13 @@ async function runSteamCmdInstall(
     let buf = "";
     const child = spawn(launch.command, allArgs, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        PATH:
+          process.env.PATH && process.env.PATH.length > 0
+            ? process.env.PATH
+            : DEFAULT_PATH,
+      },
     });
     child.stdout?.on("data", (d: Buffer) => {
       buf += d.toString("utf8");
@@ -112,12 +139,8 @@ async function runSteamCmdInstall(
     });
     child.on("error", reject);
     child.on("close", (code) => {
-      const tail = buf
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .slice(-60);
-      resolve({ code: code ?? 1, tail });
+      const allLines = buf.split("\n").map((s) => s.trimEnd());
+      resolve({ code: code ?? 1, allLines });
     });
   });
 }
@@ -145,7 +168,7 @@ export async function provisionInstance(
 
   if (stub) {
     await sleep(600);
-    await postLogs(apiBase, bearer, inst.id, [
+    await postLogLines(apiBase, bearer, inst.id, [
       "[steamline] STEAMLINE_PROVISION_STUB=1 — skipping real SteamCMD.",
     ]);
     await postStatus(apiBase, bearer, inst.id, {
@@ -166,16 +189,53 @@ export async function provisionInstance(
   const dir = instanceDataDir(inst.id);
 
   try {
-    const { code, tail } = await runSteamCmdInstall(inst.steamAppId, dir);
+    const launch: SteamCmdLaunch = await ensureSteamCmd();
 
-    if (tail.length) {
-      await postLogs(apiBase, bearer, inst.id, tail);
+    await postLogLines(
+      apiBase,
+      bearer,
+      inst.id,
+      [
+        "[steamline] --- pre-run diagnostics (share this when asking for support) ---",
+        ...collectSteamCmdDiagnostics(launch),
+      ]
+    );
+
+    const { code, allLines } = await runSteamCmdWithCapture(
+      launch,
+      inst.steamAppId,
+      dir
+    );
+
+    const nonEmpty = allLines.filter((l) => l.length > 0);
+
+    if (code === 0) {
+      const tail = nonEmpty.slice(-150);
+      if (tail.length) {
+        await postLogLines(apiBase, bearer, inst.id, [
+          "[steamline] SteamCMD stdout/stderr (tail):",
+          ...tail,
+        ]);
+      }
+    } else {
+      const body =
+        nonEmpty.length > 0
+          ? nonEmpty
+          : ["(no stdout/stderr captured — check agent process permissions and PATH)"];
+      await postLogLines(apiBase, bearer, inst.id, [
+        `[steamline] SteamCMD exited with code ${code}. Full output:`,
+        ...body,
+      ]);
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] --- post-failure diagnostics ---",
+        ...collectSteamCmdDiagnostics(launch),
+      ]);
     }
 
     if (code === 0) {
       const startCmd = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim();
       if (startCmd) {
-        await postLogs(apiBase, bearer, inst.id, [
+        await postLogLines(apiBase, bearer, inst.id, [
           "[steamline] Starting dedicated process (STEAMLINE_AFTER_INSTALL_CMD)…",
         ]);
         try {
@@ -189,13 +249,13 @@ export async function provisionInstance(
           child.unref();
           if (child.pid != null) {
             writeSteamlinePid(inst.id, child);
-            await postLogs(apiBase, bearer, inst.id, [
+            await postLogLines(apiBase, bearer, inst.id, [
               `[steamline] Wrote steamline.pid for pid ${child.pid} (stop via dashboard delete).`,
             ]);
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          await postLogs(apiBase, bearer, inst.id, [
+          await postLogLines(apiBase, bearer, inst.id, [
             `[steamline] STEAMLINE_AFTER_INSTALL_CMD failed: ${msg}`,
           ]);
         }
@@ -209,16 +269,16 @@ export async function provisionInstance(
     } else {
       const hint =
         code === 127
-          ? " Exit 127 means a dependency was missing (often bash or 32-bit libs for SteamCMD). Run the install script with sudo on minimal Ubuntu, run the agent as root once so it can apt-install deps, or install bash/tar/lib32gcc-s1 manually. Set STEAMLINE_BASH_PATH or STEAMLINE_SKIP_AUTO_DEPS=1 if you manage packages yourself."
+          ? " Exit 127 is often: missing /bin/bash, missing 32-bit dynamic linker (install libc6-i386 on Ubuntu/Debian amd64), or SteamCMD not executable. See full logs above — run the agent as root once on minimal hosts, or set STEAMLINE_BASH_PATH."
           : "";
       await postStatus(apiBase, bearer, inst.id, {
         status: "failed",
-        message: `SteamCMD exited with code ${code}.${hint} See instance logs.`,
+        message: `SteamCMD exited with code ${code}.${hint} See instance logs below for full SteamCMD output and diagnostics.`,
       });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await postLogs(apiBase, bearer, inst.id, [`[steamline] error: ${msg}`]);
+    await postLogLines(apiBase, bearer, inst.id, [`[steamline] error: ${msg}`]);
     await postStatus(apiBase, bearer, inst.id, {
       status: "failed",
       message: msg,

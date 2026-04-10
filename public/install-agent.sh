@@ -59,7 +59,8 @@ steamline_try_apt_bootstrap() {
     dpkg --add-architecture i386 2>/dev/null || true
     apt-get update -qq
   fi
-  apt-get install -y -qq lib32gcc-s1 2>/dev/null || apt-get install -y -qq lib32gcc1 2>/dev/null || true
+  apt-get install -y -qq lib32gcc-s1 libc6-i386 lib32stdc++6 lib32z1 2>/dev/null \
+    || apt-get install -y -qq lib32gcc1 libc6-i386 2>/dev/null || true
 }
 
 steamline_try_apk_bootstrap() {

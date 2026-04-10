@@ -5,6 +5,7 @@ import { CreateInstanceForm } from "@/app/(main)/servers/create-instance-form";
 import { DashboardPoller } from "@/components/dashboard-poller";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
+import { InstanceLogsPanel } from "@/components/instance-logs-panel";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -267,6 +268,7 @@ export default async function ServersPage({
                           hostName: row.hostName,
                         }}
                       />
+                      <InstanceLogsPanel instanceId={row.id} />
                     </CardContent>
                   </Card>
                 </li>

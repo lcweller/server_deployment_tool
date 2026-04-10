@@ -7,7 +7,7 @@ import { instanceLogLines, serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
 
 const bodySchema = z.object({
-  lines: z.array(z.string().max(16000)).max(200),
+  lines: z.array(z.string().max(16000)).max(500),
 });
 
 type RouteContext = { params: Promise<{ instanceId: string }> };

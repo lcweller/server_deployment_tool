@@ -8,6 +8,7 @@ import { HostRemovalStatus } from "@/components/host-removal-status";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
 import { HostResourcesPanel } from "@/components/host-resources-panel";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
+import { InstanceLogsPanel } from "@/components/instance-logs-panel";
 import { RequestRebootButton } from "@/components/request-reboot-button";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -254,6 +255,7 @@ export default async function HostDetailPage({
                             hostName: null,
                           }}
                         />
+                        <InstanceLogsPanel instanceId={inst.id} />
                       </div>
                     </li>
                   ))}

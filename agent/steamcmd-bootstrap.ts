@@ -125,6 +125,101 @@ function resolveLaunchFromDir(dir: string): SteamCmdLaunch {
   throw new Error(`SteamCMD not found under ${dir}`);
 }
 
+function tryExecFileOut(cmd: string, args: string[]): string | null {
+  const candidates = [cmd, `/usr/bin/${cmd}`, `/bin/${cmd}`];
+  for (const bin of candidates) {
+    try {
+      if (!fs.existsSync(bin)) {
+        continue;
+      }
+      return execFileSync(bin, args, {
+        encoding: "utf8",
+        maxBuffer: 256_000,
+      }).trim();
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+/**
+ * Host-side diagnostics for support (posted to instance logs on provision).
+ * Helps distinguish bash vs missing 32-bit dynamic linker for Valve's steamcmd binary.
+ */
+export function collectSteamCmdDiagnostics(launch: SteamCmdLaunch): string[] {
+  const lines: string[] = [];
+  const r = (msg: string) => lines.push(`[steamline] diag: ${msg}`);
+  r(`node=${process.version} platform=${process.platform} arch=${process.arch}`);
+  try {
+    r(`uid=${process.getuid?.()} gid=${process.getgid?.()} euid=${process.geteuid?.()}`);
+  } catch {
+    r("uid=(unavailable)");
+  }
+  r(`spawn=${launch.command} leadArgs=${JSON.stringify(launch.leadArgs)}`);
+  r(`steamcmdDir=${launch.steamcmdDir}`);
+  r(`STEAMLINE_BASH_PATH=${process.env.STEAMLINE_BASH_PATH ?? "(unset)"}`);
+  r(`PATH=${process.env.PATH ?? "(unset)"}`);
+
+  const sh = walkFindFile(launch.steamcmdDir, new Set(["steamcmd.sh"]));
+  const raw = walkFindFile(launch.steamcmdDir, new Set(["steamcmd"]));
+  for (const [label, p] of [
+    ["steamcmd.sh", sh],
+    ["steamcmd", raw],
+  ] as const) {
+    if (!p) {
+      r(`${label}: (not found under cache dir)`);
+      continue;
+    }
+    try {
+      const st = fs.statSync(p);
+      r(`${label} path=${p} mode=${(st.mode & 0o777).toString(8)}`);
+    } catch (e) {
+      r(`${label} stat failed: ${e}`);
+      continue;
+    }
+    const fileOut = tryExecFileOut("file", [p]);
+    if (fileOut) {
+      r(`file ${label}: ${fileOut.replace(/\s+/g, " ")}`);
+    }
+    if (label === "steamcmd") {
+      const lddOut = tryExecFileOut("ldd", [p]);
+      if (lddOut) {
+        for (const line of lddOut.split("\n").slice(0, 48)) {
+          if (line.trim()) {
+            r(`ldd: ${line.trim()}`);
+          }
+        }
+      } else {
+        r("ldd: (not available or failed — install libc6-i386 on amd64 Debian/Ubuntu for 32-bit SteamCMD)");
+      }
+    }
+  }
+
+  if (process.platform === "linux") {
+    const bashTry = [launch.command, "/bin/bash", "/usr/bin/bash"].filter(
+      (p, i, a) => a.indexOf(p) === i
+    );
+    for (const b of bashTry) {
+      if (!fs.existsSync(b)) {
+        continue;
+      }
+      try {
+        const ver = execFileSync(b, ["--version"], {
+          encoding: "utf8",
+          maxBuffer: 4096,
+        }).trim();
+        r(`bash ${b}: ${ver.split("\n")[0] ?? ver}`);
+        break;
+      } catch {
+        /* try next */
+      }
+    }
+  }
+
+  return lines;
+}
+
 /**
  * Resolve SteamCMD binary — custom path, cache, or download Valve build.
  */

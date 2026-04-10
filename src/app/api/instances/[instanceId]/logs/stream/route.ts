@@ -58,7 +58,7 @@ export async function GET(request: Request, context: RouteContext) {
               )
             )
             .orderBy(asc(instanceLogLines.id))
-            .limit(500);
+            .limit(2000);
 
           for (const line of lines) {
             after = line.id;

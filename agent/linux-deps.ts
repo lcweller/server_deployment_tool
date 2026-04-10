@@ -78,15 +78,27 @@ export function tryInstallLinuxDepsForSteamline(): void {
       ensureI386IfDebian();
       runApt(["update", "-qq"]);
       try {
-        runApt(["install", "-y", "-qq", "lib32gcc-s1"]);
+        runApt([
+          "install",
+          "-y",
+          "-qq",
+          "lib32gcc-s1",
+          "libc6-i386",
+          "lib32stdc++6",
+        ]);
       } catch {
         try {
-          runApt(["install", "-y", "-qq", "lib32gcc1"]);
+          runApt(["install", "-y", "-qq", "lib32gcc1", "libc6-i386"]);
         } catch {
           console.error(
-            "[steamline] Could not install lib32gcc* — SteamCMD may still fail on very minimal images."
+            "[steamline] Could not install 32-bit SteamCMD deps (lib32gcc / libc6-i386) — SteamCMD may still fail on very minimal images."
           );
         }
+      }
+      try {
+        runApt(["install", "-y", "-qq", "lib32z1"]);
+      } catch {
+        /* optional zlib for some titles */
       }
     } catch (e) {
       console.error("[steamline] apt auto-install failed (non-fatal):", e);
