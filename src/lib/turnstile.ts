@@ -8,11 +8,27 @@ type TurnstileVerifyResponse = {
   "error-codes"?: string[];
 };
 
+function skipTurnstileByEnv(): boolean {
+  const v = process.env.STEAMLINE_SKIP_TURNSTILE?.toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 export async function verifyTurnstileToken(token: string | null | undefined) {
+  if (skipTurnstileByEnv()) {
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        "[turnstile] STEAMLINE_SKIP_TURNSTILE is set — captcha verification disabled (self-hosted only)"
+      );
+    }
+    return true;
+  }
+
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("TURNSTILE_SECRET_KEY is required in production");
+      throw new Error(
+        "TURNSTILE_SECRET_KEY is required in production (or set STEAMLINE_SKIP_TURNSTILE=1 to disable captcha for self-hosting)"
+      );
     }
     console.warn(
       "[turnstile] TURNSTILE_SECRET_KEY not set — skipping verification (dev only)"

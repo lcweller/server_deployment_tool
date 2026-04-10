@@ -39,7 +39,11 @@ services:
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your public URL}
       CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+      # Public site key at runtime (use this in Docker; NEXT_PUBLIC_* needs a rebuild)
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # Set to 1 only for private/self-hosted installs without Cloudflare Turnstile (not for public production).
+      STEAMLINE_SKIP_TURNSTILE: ${STEAMLINE_SKIP_TURNSTILE:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-}

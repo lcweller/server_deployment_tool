@@ -24,7 +24,7 @@ This guide assumes you push this repo to **GitHub** and use the included workflo
 | `CRON_SECRET` | Long random string; protect `/api/cron/*` calls. |
 | `DATABASE_URL` | Handled for you if you use `docker-compose.stack.yml` (Postgres service). |
 | Email (optional) | `SMTP_*` for verification mail. |
-| Turnstile (recommended) | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` for login/register. |
+| Turnstile (recommended for **public** sites) | **`TURNSTILE_SITE_KEY`** + **`TURNSTILE_SECRET_KEY`** at container runtime (pre-built images ignore `NEXT_PUBLIC_*` unless you rebuild). For **private/LAN** only, `STEAMLINE_SKIP_TURNSTILE=1` (never on a public URL). |
 | Stripe (optional) | `STRIPE_*` if you use billing. |
 
 ## 3. Unraid: run with Docker Compose (recommended)
@@ -57,6 +57,23 @@ If you prefer the Docker UI without Compose:
 4. Add **Environment variables** matching what `docker-compose.stack.yml` passes to `app` (you still need a **Postgres** container and `DATABASE_URL` pointing to it, e.g. `postgresql://user:pass@steamline-postgres:5432/steamline` on a custom network).
 
 Compose is simpler because Postgres + app + healthchecks are defined together.
+
+### “DATABASE_URL is required” / container exits after migrations
+
+The app **must** connect to PostgreSQL before it starts.
+
+- **Docker Compose (`docker-compose.stack.yml`):** Compose should pass `DATABASE_URL` automatically from `POSTGRES_*`. If it is still empty, your `.env` may not be loaded — use  
+  `docker compose -f docker-compose.stack.yml --env-file .env up -d`  
+  and ensure `POSTGRES_PASSWORD` is set (see `.env.example`).
+
+- **Unraid “Add Container” only:** You must add **`DATABASE_URL`** yourself. Use your Postgres user, password, database name, and a **reachable host**:
+  - If Postgres is another container with a **published port** on Unraid (e.g. `5432` on the server), use your **Unraid LAN IP**:  
+    `postgresql://steamline:YOUR_PASSWORD@192.168.1.50:5432/steamline`
+  - If both containers share a **custom Docker network** and the DB container is named `steamline-postgres`, you can use that **container name** as the host instead of an IP.
+
+Passwords with special characters (`@`, `:`, `#`, etc.) must be **URL-encoded** inside `DATABASE_URL`.
+
+Images **after** the entrypoint update can also set only **`POSTGRES_PASSWORD`** (and optionally **`POSTGRES_USER`**, **`POSTGRES_DB`**, **`POSTGRES_HOST`**) and the container will build `DATABASE_URL` on startup when `DATABASE_URL` itself is empty.
 
 ## 5. HTTPS and public URL
 
