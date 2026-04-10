@@ -57,12 +57,11 @@ export function TurnstileField({ onToken, onExpire }: Props) {
   if (!siteKey) {
     return (
       <p className="text-xs text-muted-foreground">
-        Captcha not configured. For Docker, set runtime{" "}
+        Captcha not configured. Set container env{" "}
         <code className="rounded bg-muted px-1">TURNSTILE_SITE_KEY</code> and{" "}
-        <code className="rounded bg-muted px-1">TURNSTILE_SECRET_KEY</code> (or dev:{" "}
-        <code className="rounded bg-muted px-1">NEXT_PUBLIC_TURNSTILE_SITE_KEY</code>
-        ). Or <code className="rounded bg-muted px-1">STEAMLINE_SKIP_TURNSTILE=1</code>{" "}
-        for private LAN only.
+        <code className="rounded bg-muted px-1">TURNSTILE_SECRET_KEY</code>, or{" "}
+        <code className="rounded bg-muted px-1">STEAMLINE_SKIP_TURNSTILE=1</code> for
+        private/LAN only.
       </p>
     );
   }
