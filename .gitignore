@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# Generated agent bundle (see npm run agent:bundle)
+/public/steamline-agent.cjs
+
 # production
 /build
 

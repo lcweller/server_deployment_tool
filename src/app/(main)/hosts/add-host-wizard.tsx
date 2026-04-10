@@ -57,7 +57,7 @@ function dashboardBaseUrl(): string {
 
 function buildEnrollShellCommand(baseUrl: string, token: string): string {
   const b = baseUrl.replace(/\/$/, "");
-  return `npm run agent -- enroll "${b}" "${token}"`;
+  return `curl -fsSL "${b}/install-agent.sh" | bash -s -- "${b}" "${token}"`;
 }
 
 export function AddHostWizard() {
@@ -163,10 +163,10 @@ export function AddHostWizard() {
 
   const osNote =
     platformOs === "windows"
-      ? "Install WSL 2 (Ubuntu), install Node.js inside WSL, clone or copy this project, then run the command in that Linux shell."
+      ? "Install WSL 2 (Ubuntu), install Node.js 18+ inside WSL, then paste the command in that Linux shell."
       : platformOs === "macos"
-        ? "Run the command from your Steamline project directory where package.json lives."
-        : "Run the command on the host from your Steamline project directory (where package.json lives).";
+        ? "Requires Node.js 18+ and curl. The installer downloads the agent into ~/.steamline/."
+        : "Requires Node.js 18+ and curl on the host. The installer downloads the agent into ~/.steamline/ — no git clone.";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>

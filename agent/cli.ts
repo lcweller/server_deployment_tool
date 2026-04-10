@@ -61,12 +61,13 @@ async function enroll(baseUrl: string, token: string) {
   }
   console.log(text);
   console.error(
-    "\nSave the apiKey securely (e.g. /etc/steamline/agent.env as STEAMLINE_API_KEY=...)."
+    "\nSave the apiKey securely (e.g. ~/.steamline/steamline-agent.env as STEAMLINE_API_KEY=...)."
   );
   const u = baseUrl.replace(/\/$/, "");
   console.error(
-    `\nHands-off mode: npm run agent -- run ${u}\n` +
-      "(heartbeats + automatic server provisioning from the dashboard)."
+    `\nRun loop (heartbeats + provisioning from the dashboard):\n` +
+      `  cd ~/.steamline && node steamline-agent.cjs run ${u}\n` +
+      `(or use the dashboard one-line curl installer — it writes steamline-agent.env for you.)`
   );
 }
 

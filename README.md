@@ -6,7 +6,7 @@ Web control plane for **Steam dedicated servers**: sign up, verify email, pair *
 
 - **Next.js 16** · **PostgreSQL** · **Drizzle ORM**
 - **Auth:** bcrypt + DB sessions + **Cloudflare Turnstile** + **SMTP** verification mail
-- **Agent:** CLI in `agent/cli.ts` — enroll, heartbeat, **run** = deletion queue + host teardown + provision (downloads **SteamCMD** on first use; stub only if `STEAMLINE_PROVISION_STUB=1`)
+- **Agent:** CLI in `agent/cli.ts` — enroll, heartbeat, **run** = deletion queue + host teardown + provision (downloads **SteamCMD** on first use; stub only if `STEAMLINE_PROVISION_STUB=1`). Production builds bundle a single **`steamline-agent.cjs`** (see `npm run agent:bundle`) served from the dashboard so hosts can **`curl …/install-agent.sh | bash`** without cloning the repo.
 - **Billing:** Stripe Checkout + Customer Portal + webhooks
 - **Jobs:** `GET /api/cron/catalog-ingest` and `GET /api/cron/prune-logs` (Bearer `CRON_SECRET`)
 
@@ -43,8 +43,8 @@ npm run dev
 
 1. Open http://localhost:3000 — **Register** (use Mailpit http://localhost:8025 to read the verification link if SMTP points to Mailpit).
 2. After verifying, open **Hosts** → **Add host** (wizard: name → OS → copy enroll command).
-3. On the target machine (Linux, macOS dev, or WSL): run the copied command from the Steamline project directory. The wizard detects enrollment automatically; open the host for full details.
-4. On the host, run **`npm run agent:run`** (Windows) or **`npm run agent -- run http://localhost:3000`** after setting the key. First run creates **`steamline-agent.env`** — paste the enroll **`apiKey`** there, save, run again. That loop **heartbeats** and **provisions** UI servers (`queued` → `installing` → `running`).
+3. On the target machine (Linux, macOS, or WSL): run the copied **one-line** command (requires **Node.js 18+** and **curl**). It downloads **`steamline-agent.cjs`**, enrolls, and writes **`~/.steamline/steamline-agent.env`**. The wizard detects enrollment automatically; open the host for full details.
+4. On the host, start the loop: **`cd ~/.steamline && node steamline-agent.cjs run <API_URL>`** (or from a dev clone: **`npm run agent:run`** on Windows, **`npm run agent -- run <URL>`** with the repo). That loop **heartbeats** and **provisions** UI servers (`queued` → `installing` → `running`).
 5. Optional: `npm run catalog:ingest:local` (with `npm run dev` running) to pull Steam titles into the catalog.
 6. Open **Servers** → create an instance (catalog + enrolled host), or **Catalog** → **Deploy to host**. Watch status update as the agent runs.
 
@@ -53,7 +53,8 @@ npm run dev
 | Script | Purpose |
 |--------|---------|
 | `npm run dev` | Dev server |
-| `npm run build` | Production build |
+| `npm run build` | Production build (runs **`agent:bundle`** first — emits `public/steamline-agent.cjs`) |
+| `npm run agent:bundle` | Bundle agent to `public/steamline-agent.cjs` for host installs |
 | `npm run db:migrate` | Apply SQL migrations |
 | `npm run db:seed` | Seed demo catalog rows |
 | `npm run catalog:ingest:local` | Call catalog ingest using `CRON_SECRET` from `.env.local` (app must be up) |
@@ -84,8 +85,8 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 
 ## Remote provisioning (host)
 
-1. Enroll the host and set `STEAMLINE_API_KEY` (the **real** key from the enroll JSON — not the literal characters `…`).
-2. Run **`npm run agent -- run <API_URL>`** on the host and leave it running (systemd, tmux, or Task Scheduler).
+1. **Enroll:** use the dashboard **`curl …/install-agent.sh | bash`** command (writes **`~/.steamline/steamline-agent.env`**) or run **`npm run agent -- enroll …`** from a git clone and save the **`apiKey`** yourself.
+2. **Run loop:** **`cd ~/.steamline && node steamline-agent.cjs run <API_URL>`** (or **`npm run agent -- run <API_URL>`** from the repo). Leave it running (systemd, tmux, or Task Scheduler).
 
 **Windows (easiest):** from the project folder run:
 
