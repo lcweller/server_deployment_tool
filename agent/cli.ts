@@ -21,6 +21,7 @@ import { collectHeartbeatMetrics } from "./collect-metrics";
 import { loadSteamlineApiKeyEarly } from "./load-api-key";
 import { provisionInstance, type RemoteInstance } from "./provision";
 import { performDashboardReboot } from "./reboot";
+import { getMachineFingerprint } from "./machine-fingerprint";
 
 loadSteamlineApiKeyEarly();
 
@@ -53,10 +54,21 @@ async function enroll(baseUrl: string, token: string) {
     body: JSON.stringify({
       enrollmentToken: token,
       agentVersion: "steamline-agent/0.1.0",
+      machineFingerprint: getMachineFingerprint(),
     }),
   });
   const text = await res.text();
   if (!res.ok) {
+    try {
+      const j = JSON.parse(text) as { message?: string; error?: string };
+      if (j.message) {
+        console.error(j.message);
+      } else if (j.error) {
+        console.error(j.error);
+      }
+    } catch {
+      /* ignore */
+    }
     console.error("Enroll failed:", res.status, text);
     process.exit(1);
   }
@@ -258,7 +270,7 @@ program
 
 program
   .command("enroll")
-  .argument("<baseUrl>", "API base URL, e.g. https://app.example.com")
+  .argument("<baseUrl>", "API base URL, e.g. https://game.layeroneconstultants.com")
   .argument("<token>", "One-time enrollment token from the dashboard")
   .action(async (baseUrl: string, token: string) => {
     await enroll(baseUrl, token);

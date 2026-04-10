@@ -5,6 +5,8 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { tryInstallLinuxDepsForSteamline } from "./linux-deps";
+
 const LINUX_URL =
   "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
 const WIN_URL =
@@ -127,6 +129,10 @@ function resolveLaunchFromDir(dir: string): SteamCmdLaunch {
  * Resolve SteamCMD binary — custom path, cache, or download Valve build.
  */
 export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
+  if (process.platform === "linux") {
+    tryInstallLinuxDepsForSteamline();
+  }
+
   if (process.env.STEAMLINE_STEAMCMD_PATH) {
     const p = process.env.STEAMLINE_STEAMCMD_PATH;
     if (!fs.existsSync(p)) {

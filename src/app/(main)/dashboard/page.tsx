@@ -38,7 +38,7 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title="Overview"
-        description={`Signed in as ${user?.email ?? "unknown"}. Hosts, servers, and jobs will surface here as the agent and API land.`}
+        description={`Signed in as ${user?.email ?? "unknown"}. Enroll hosts, deploy game servers from the catalog, and track status here.`}
       />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

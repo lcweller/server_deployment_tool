@@ -82,7 +82,7 @@ export default async function ServersPage({
       <DashboardPoller intervalMs={8000} />
       <PageHeader
         title="Servers"
-        description="Create Steam dedicated servers on your enrolled hosts. The agent installs SteamCMD when needed and provisions from the catalog."
+        description="Deploy game servers from the catalog to your enrolled hosts. The agent installs SteamCMD when needed and provisions each instance."
       />
       <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
         <section className="grid gap-3 sm:grid-cols-3">

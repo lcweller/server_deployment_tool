@@ -97,7 +97,7 @@ Set these **environment variables** on the Steamline app (not Postgres):
 | `SMTP_USER` | `noreply@example.com` | Full mailbox address |
 | `SMTP_PASS` | `(password)` | From `./setup.sh email add …` |
 | `SMTP_FROM` | `Steamline <noreply@example.com>` | Should match an existing mailbox/domain on DMS |
-| `APP_PUBLIC_URL` | `https://steamline.example.com` | No trailing slash; used in email links |
+| `APP_PUBLIC_URL` | `https://game.layeroneconstultants.com` | No trailing slash; used in email links |
 
 Restart Steamline after saving.
 

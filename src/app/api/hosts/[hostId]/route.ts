@@ -82,7 +82,7 @@ export async function GET(_request: Request, ctx: RouteCtx) {
       )
     );
 
-  const { enrollmentTokenHash: _h, ...rest } = row;
+  const { enrollmentTokenHash: _h, machineFingerprint: _mf, ...rest } = row;
   return NextResponse.json({
     host: {
       ...rest,

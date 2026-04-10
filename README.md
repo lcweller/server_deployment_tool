@@ -2,6 +2,10 @@
 
 Web control plane for **Steam dedicated servers**: sign up, verify email, pair **Linux agents**, browse the **catalog** (seed + Steam ingest), push **logs** from agents, and optionally bill with **Stripe**.
 
+## Deployment model
+
+**Only the platform operator** (you) deploys this Next.js app, database, and infrastructure. **Everyone else uses the hosted app to deploy game servers** — they sign in at your URL, add hosts, pick titles from the catalog, and run the **one-line agent installer** on **their own machines** so Steamline can install and run those servers for them. They do not clone this repo or host the control plane.
+
 ## Stack
 
 - **Next.js 16** · **PostgreSQL** · **Drizzle ORM**
@@ -67,7 +71,7 @@ Push to GitHub → **Actions** builds and pushes **`ghcr.io/<user>/<repo>:latest
 
 The container entrypoint applies migrations, then **seeds starter catalog rows** if `catalog_entries` is empty (`RUN_CATALOG_SEED_ON_START`, default on). Agents send **CPU / RAM / disk** metrics with each heartbeat (`host_metrics` column).
 
-## Cron (self-hosted)
+## Cron jobs (operator deployment)
 
 Call periodically (e.g. Unraid user script + `curl`):
 
@@ -85,20 +89,30 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 2. Add `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and point webhook to `/api/webhooks/stripe` (events: `customer.subscription.*`).
 3. Users open **Billing** → Checkout; portal requires an existing Stripe customer (after checkout).
 
-## Remote provisioning (host)
+## Remote provisioning (game hosts)
 
-1. **Enroll:** use the dashboard **`curl …/install-agent.sh | bash`** command (writes **`~/.steamline/steamline-agent.env`**) or run **`npm run agent -- enroll …`** from a git clone and save the **`apiKey`** yourself.
-2. **Run loop:** **`cd ~/.steamline && node steamline-agent.cjs run <API_URL>`** (or **`npm run agent -- run <API_URL>`** from the repo). Leave it running (systemd, tmux, or Task Scheduler).
+**End users** (your customers) only use the **hosted dashboard** and run the **one-line install** on their game machine — they do not clone this repository.
 
-**Windows (easiest):** from the project folder run:
+1. **Enroll (normal path):** **Add host** → copy the command from the UI. Example (your public URL):
+
+   ```bash
+   curl -fsSL "https://game.layeroneconstultants.com/install-agent.sh" | sudo bash -s -- "https://game.layeroneconstultants.com" "<ENROLLMENT_TOKEN>"
+   ```
+
+   That writes **`~/.steamline/steamline-agent.env`**. **Operator/dev only:** you can also run **`npm run agent -- enroll <URL> <TOKEN>`** from this repo when debugging the agent.
+
+2. **Run loop:** on the host, **`cd ~/.steamline && node steamline-agent.cjs run https://game.layeroneconstultants.com`** (the installer starts this in the background). Leave it running (systemd, tmux, etc.).
+
+**Windows agent development (operator clone only):** from this repo:
 
 ```powershell
 npm run agent:run
 ```
 
-The first time, it creates **`steamline-agent.env`**. Open that file, paste the **`apiKey`** from the enroll JSON after the `=` sign, save, then run **`npm run agent:run`** again. The script reads **`APP_PUBLIC_URL`** from `.env.local` or defaults to `http://localhost:3000`.
+The first time, it creates **`steamline-agent.env`**. Paste the **`apiKey`** from enroll output, save, run again. Uses **`APP_PUBLIC_URL`** from `.env.local` or defaults to `http://localhost:3000`.
 
-**Manual (any shell):** set `STEAMLINE_API_KEY` and run `npm run agent -- run "<URL>"`, or put the key in **`steamline-agent.env`** (see `steamline-agent.env.example`).
+**Manual:** set `STEAMLINE_API_KEY` and run `npm run agent -- run "<URL>"`, or use **`steamline-agent.env.example`**.
+
 3. Create servers in **Servers**; they start as **`queued`**. The agent loop provisions one per cycle: **`queued` → `installing` → `running`** (or **`failed`**).
 
 **Provisioning (on the host):**

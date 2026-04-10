@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Steamline agent — one-line install (Linux / macOS / WSL).
-# Usage:
-#   curl -fsSL "https://<your-dashboard>/install-agent.sh" | bash -s -- "<BASE_URL>" "<ENROLLMENT_TOKEN>"
+# Usage (hosted Steamline — customers use your public URL, e.g.):
+#   curl -fsSL "https://game.layeroneconstultants.com/install-agent.sh" | bash -s -- "https://game.layeroneconstultants.com" "<ENROLLMENT_TOKEN>"
 #
 # Requires: curl, bash, Node.js 18+ on PATH.
 # After enroll, starts the agent in the background (no second SSH session needed).
 # Set STEAMLINE_INSTALL_SKIP_RUN=1 to only enroll and write steamline-agent.env.
+#
+# Minimal Ubuntu: run with sudo so dependencies can be installed, or set STEAMLINE_APT_INSTALL=1.
+# Set STEAMLINE_SKIP_APT=1 to never run apt/apk.
+# Set STEAMLINE_ALLOW_DUPLICATE_ENROLL=1 to bypass the "already installed" guard (not recommended).
 set -euo pipefail
 
 die() {
@@ -22,8 +26,58 @@ fi
 
 BASE_URL="${BASE_URL%/}"
 
+INSTALL_ROOT="${STEAMLINE_HOME:-$HOME/.steamline}"
+mkdir -p "$INSTALL_ROOT"
+
+# --- One agent per OS instance: refuse if a previous enroll left an API key here ---
+if [[ -f "$INSTALL_ROOT/steamline-agent.env" ]]; then
+  if grep -qE '^STEAMLINE_API_KEY=[^[:space:]]+' "$INSTALL_ROOT/steamline-agent.env" 2>/dev/null; then
+    if [[ "${STEAMLINE_ALLOW_DUPLICATE_ENROLL:-0}" != "1" ]]; then
+      die "Agent already installed ($INSTALL_ROOT/steamline-agent.env). One Steamline agent per machine — use the dashboard to deploy multiple game servers to this host. To replace enrollment: remove the host in the dashboard, delete $INSTALL_ROOT, add a new host, and run this installer again. Override (unsafe): STEAMLINE_ALLOW_DUPLICATE_ENROLL=1"
+    fi
+  fi
+fi
+
+# --- Debian/Ubuntu: bash, curl, ca-certificates, tar, 32-bit libs for Valve SteamCMD ---
+steamline_try_apt_bootstrap() {
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  [[ "${STEAMLINE_SKIP_APT:-0}" == "1" ]] && return 0
+  [[ -x /usr/bin/apt-get ]] || return 0
+
+  if [[ "$(id -u)" != "0" ]] && [[ "${STEAMLINE_APT_INSTALL:-0}" != "1" ]]; then
+    echo "steamline: Not running as root — skipping automatic apt install." >&2
+    echo "steamline: On minimal Ubuntu, use: curl -fsSL \"https://game.layeroneconstultants.com/install-agent.sh\" | sudo bash -s -- \"https://game.layeroneconstultants.com\" \"<TOKEN>\"" >&2
+    echo "steamline: Or install: bash curl ca-certificates tar gzip, and i386 + lib32gcc-s1 for SteamCMD." >&2
+    return 0
+  fi
+
+  echo "steamline: Installing base packages via apt (bash, curl, tar, 32-bit libs for SteamCMD)…" >&2
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq bash curl ca-certificates tar gzip libc6 || true
+  if ! dpkg --print-foreign-architectures 2>/dev/null | grep -q '^i386$'; then
+    dpkg --add-architecture i386 2>/dev/null || true
+    apt-get update -qq
+  fi
+  apt-get install -y -qq lib32gcc-s1 2>/dev/null || apt-get install -y -qq lib32gcc1 2>/dev/null || true
+}
+
+steamline_try_apk_bootstrap() {
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  [[ "${STEAMLINE_SKIP_APT:-0}" == "1" ]] && return 0
+  [[ -x /sbin/apk ]] || return 0
+  [[ "$(id -u)" == "0" ]] || return 0
+  echo "steamline: Installing base packages via apk (bash, tar, curl)…" >&2
+  apk add --no-cache bash tar curl ca-certificates || true
+}
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  steamline_try_apt_bootstrap
+  steamline_try_apk_bootstrap
+fi
+
 if ! command -v curl >/dev/null 2>&1; then
-  die "curl is required but not found."
+  die "curl is required but not found (install curl and re-run)."
 fi
 
 if ! command -v node >/dev/null 2>&1; then
@@ -35,9 +89,6 @@ NODE_MAJOR="$(node -p "Number(process.versions.node.split('.')[0])")"
 if (( NODE_MAJOR < 18 )); then
   die "Node.js 18 or newer is required (found $(node -v))."
 fi
-
-INSTALL_ROOT="${STEAMLINE_HOME:-$HOME/.steamline}"
-mkdir -p "$INSTALL_ROOT"
 
 AGENT_URL="${BASE_URL}/steamline-agent.cjs"
 echo "Downloading agent from ${AGENT_URL} ..." >&2

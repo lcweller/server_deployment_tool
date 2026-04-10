@@ -50,9 +50,9 @@ export default function HomePage() {
             Deploy game servers with a calm, fast control plane.
           </h1>
           <p className="text-balance text-lg text-muted-foreground md:text-xl">
-            Pair agents on your own Linux hosts, pick from a Steam-aware
-            catalog, and manage installs and logs from one dashboard—built for
-            clarity, not clutter.
+            Deploy servers from the catalog to your own hardware: enroll a host,
+            choose a game, and let the agent install and run it—one dashboard for
+            provisioning, logs, and lifecycle.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Link
@@ -76,7 +76,7 @@ export default function HomePage() {
             {
               icon: Server,
               title: "Your hardware",
-              text: "Agents run where you want—VPS, home lab, or cloud. The panel stays on your Unraid stack.",
+              text: "Steamline runs in the cloud; lightweight agents run on the Linux machines where your game servers live—VPS, home lab, or dedicated box.",
             },
             {
               icon: Shield,

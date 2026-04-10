@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     template: "%s · Steamline",
   },
   description:
-    "Deploy and manage Steam dedicated servers from a clean web dashboard. Pair agents on your own hardware or cloud.",
+    "Use Steamline to deploy and manage dedicated game servers from your browser. Install a small agent on each host you control.",
 };
 
 export default function RootLayout({

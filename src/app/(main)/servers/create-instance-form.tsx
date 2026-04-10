@@ -88,8 +88,8 @@ export function CreateInstanceForm({
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           {eligibleHosts.length === 0
-            ? "Add a host and run the one-line install on your game machine. When enrollment completes, return here to deploy."
-            : "The dashboard normally ships with starter titles after deploy. If you still see this, open the catalog or ask your operator to run ingest."}
+            ? "Add a host and run the one-line install on your game machine. When enrollment completes, return here to deploy a server."
+            : "The catalog is usually populated after the service is updated. Try again later or open the catalog; if it stays empty, contact support."}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link

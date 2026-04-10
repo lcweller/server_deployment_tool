@@ -18,6 +18,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { HOSTED_DASHBOARD_PUBLIC_URL } from "@/lib/hosted-dashboard-url";
 import { cn } from "@/lib/utils";
 
 export type PlatformOs = "linux" | "macos" | "windows";
@@ -223,7 +224,7 @@ export function AddHostWizard() {
       ? "Install WSL 2 (Ubuntu), install Node.js 18+ inside WSL, then paste the command in that Linux shell."
       : platformOs === "macos"
         ? "Requires Node.js 18+ and curl. One command enrolls and starts the agent in the background."
-        : "Requires Node.js 18+ and curl. One command downloads the agent, enrolls it, and starts the run loop in the background — no second SSH step.";
+        : "Requires Node.js 18+ and curl. On minimal Ubuntu, pipe the script to sudo bash so it can install bash, tar, and 32-bit libs for SteamCMD. Only one agent per machine — use the dashboard to add multiple game servers to that host.";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -371,6 +372,13 @@ export function AddHostWizard() {
                         shellCmd || "…"
                       )}
                     </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Run this only on <strong className="font-medium text-foreground">each machine where you want to run game servers</strong>. Steamline is hosted at{" "}
+                      <span className="font-mono text-foreground/90">
+                        {HOSTED_DASHBOARD_PUBLIC_URL}
+                      </span>
+                      — this command installs the agent so you can <strong className="font-medium text-foreground">deploy servers from the dashboard</strong>, not host the platform yourself.
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"

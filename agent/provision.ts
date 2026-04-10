@@ -209,7 +209,7 @@ export async function provisionInstance(
     } else {
       const hint =
         code === 127
-          ? " Exit 127 usually means “command not found” (often bash missing on minimal Linux — install bash or set STEAMLINE_BASH_PATH)."
+          ? " Exit 127 means a dependency was missing (often bash or 32-bit libs for SteamCMD). Run the install script with sudo on minimal Ubuntu, run the agent as root once so it can apt-install deps, or install bash/tar/lib32gcc-s1 manually. Set STEAMLINE_BASH_PATH or STEAMLINE_SKIP_AUTO_DEPS=1 if you manage packages yourself."
           : "";
       await postStatus(apiBase, bearer, inst.id, {
         status: "failed",

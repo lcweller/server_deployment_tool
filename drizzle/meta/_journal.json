@@ -50,6 +50,13 @@
       "when": 1775767000000,
       "tag": "0006_host_reboot_request",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775768000000,
+      "tag": "0007_host_machine_fingerprint",
+      "breakpoints": true
     }
   ]
 }

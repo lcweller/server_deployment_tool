@@ -94,6 +94,10 @@ export const hosts = pgTable("hosts", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   /** Dashboard requested reboot — agent consumes on next heartbeat. */
   rebootRequestedAt: timestamp("reboot_requested_at", { withTimezone: true }),
+  /**
+   * Stable id for this OS instance — prevents enrolling two dashboard hosts from the same machine.
+   */
+  machineFingerprint: text("machine_fingerprint"),
   updateMode: text("update_mode").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

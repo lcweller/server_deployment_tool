@@ -1,6 +1,8 @@
 # Deploy Steamline on Unraid (Docker + GitHub)
 
-This guide assumes you push this repo to **GitHub** and use the included workflow to build and publish the image to **GitHub Container Registry (GHCR)**.
+This guide is for the **platform operator** only — the person who hosts Steamline for everyone else. End users never follow these steps; they only use your public URL and run the agent on their game servers.
+
+It assumes you push this repo to **GitHub** and use the included workflow to build and publish the image to **GitHub Container Registry (GHCR)**.
 
 ## 1. GitHub: build and publish
 
@@ -20,7 +22,7 @@ This guide assumes you push this repo to **GitHub** and use the included workflo
 
 | Variable | Purpose |
 |----------|---------|
-| `APP_PUBLIC_URL` | Full public URL with scheme, no trailing slash (e.g. `https://steamline.example.com`). Used for email links and Stripe redirects. |
+| `APP_PUBLIC_URL` | Full public URL with scheme, no trailing slash (e.g. `https://game.layeroneconstultants.com`). Used for email links, Stripe redirects, and agent install commands. |
 | `CRON_SECRET` | Long random string; protect `/api/cron/*` calls. |
 | `DATABASE_URL` | Handled for you if you use `docker-compose.stack.yml` (Postgres service). |
 | Email (optional) | `SMTP_*` for verification mail. Self-hosted [Docker-Mailserver + Steamline](SMTP-DOCKER-MAILSERVER.md). |
@@ -33,7 +35,7 @@ This guide assumes you push this repo to **GitHub** and use the included workflo
 2. On your server, clone or copy the repo (or at least `docker-compose.stack.yml`).
 3. Create `.env` next to the compose file (see `.env.example` in the repo). Set at minimum:
 
-   - `APP_PUBLIC_URL=https://your-domain`
+   - `APP_PUBLIC_URL=https://game.layeroneconstultants.com`
    - `CRON_SECRET=...`
    - `POSTGRES_PASSWORD=...` (strong password)
    - `STEAMLINE_IMAGE=ghcr.io/youruser/steam-server-dashboard:latest` (must match the GHCR path from Actions; **lowercase**)

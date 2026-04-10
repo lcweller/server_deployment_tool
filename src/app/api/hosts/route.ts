@@ -27,7 +27,11 @@ export async function GET() {
     .orderBy(desc(hosts.createdAt));
 
   const hostsOut = rows.map(
-    ({ enrollmentTokenHash: _hash, ...rest }) => ({
+    ({
+      enrollmentTokenHash: _hash,
+      machineFingerprint: _mf,
+      ...rest
+    }) => ({
       ...rest,
       awaitingEnrollment: rest.status === "pending",
     })
