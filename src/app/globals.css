@@ -131,3 +131,19 @@
     @apply font-sans;
   }
 }
+
+/** Indeterminate progress (queued / draft — not a fake “percent done”) */
+@keyframes steamline-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+@layer utilities {
+  .animate-steamline-indeterminate {
+    animation: steamline-indeterminate 1.6s ease-in-out infinite;
+  }
+}

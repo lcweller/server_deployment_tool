@@ -1,0 +1,109 @@
+"use client";
+
+import { AlertTriangle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { cn } from "@/lib/utils";
+
+type Props = {
+  hostId: string;
+  initialStatus: string;
+  instancesPendingDelete: number;
+  instanceTotal: number;
+};
+
+export function HostRemovalStatus({
+  hostId,
+  initialStatus,
+  instancesPendingDelete,
+  instanceTotal,
+}: Props) {
+  const router = useRouter();
+  const [status, setStatus] = useState(initialStatus);
+  const [pendingDelete, setPendingDelete] = useState(instancesPendingDelete);
+  const [total, setTotal] = useState(instanceTotal);
+
+  useEffect(() => {
+    if (status !== "pending_removal") {
+      return;
+    }
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/hosts/${hostId}`, { cache: "no-store" });
+        if (res.status === 404) {
+          router.push("/hosts");
+          router.refresh();
+          return;
+        }
+        if (!res.ok) {
+          return;
+        }
+        const j = (await res.json()) as {
+          host?: {
+            status: string;
+            instancesPendingDelete?: number;
+            instanceTotal?: number;
+          };
+        };
+        if (j.host) {
+          setStatus(j.host.status);
+          if (j.host.instancesPendingDelete != null) {
+            setPendingDelete(j.host.instancesPendingDelete);
+          }
+          if (j.host.instanceTotal != null) {
+            setTotal(j.host.instanceTotal);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    const id = window.setInterval(tick, 3500);
+    void tick();
+    return () => window.clearInterval(id);
+  }, [hostId, router, status]);
+
+  if (status !== "pending_removal") {
+    return null;
+  }
+
+  const phase =
+    total > 0
+      ? "Deleting game server data on the host"
+      : "No instances left — wiping Steamline data and unregistering";
+
+  const detail =
+    total > 0
+      ? `${pendingDelete} instance(s) still queued for deletion on the agent (${total} total row(s) in the dashboard until purge completes).`
+      : "The agent should remove local data, call the API, and disappear from your list. If this sits here for a long time, the agent is probably not running on the machine.";
+
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-amber-500/35 bg-amber-500/[0.07] p-4 shadow-sm",
+        "ring-1 ring-amber-500/20"
+      )}
+    >
+      <div className="flex gap-3">
+        <AlertTriangle
+          className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-hidden
+        />
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-semibold text-foreground">
+            Host removal in progress
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">{phase}.</span>{" "}
+            {detail}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            Status:{" "}
+            <span className="font-mono text-foreground">pending_removal</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

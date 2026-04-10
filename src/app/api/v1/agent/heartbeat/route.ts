@@ -13,11 +13,16 @@ const metricsSchema = z
     platform: z.string().max(32).optional(),
     cpuModel: z.string().max(512).optional(),
     cpuCores: z.number().int().min(1).max(4096).optional(),
+    cpuSockets: z.number().int().min(1).max(256).nullable().optional(),
+    cpuLayoutSummary: z.string().max(512).nullable().optional(),
+    cpuModelLines: z.array(z.string().max(512)).max(64).optional(),
     loadAvg1m: z.number().min(0).max(1e6).optional(),
     cpuEstimatePercent: z.number().min(0).max(100).optional(),
     memTotalBytes: z.number().nonnegative().optional(),
     memUsedBytes: z.number().nonnegative().optional(),
     memUsedPercent: z.number().min(0).max(100).optional(),
+    memoryModuleCount: z.number().int().min(0).max(256).nullable().optional(),
+    memoryModuleSummary: z.string().max(2048).nullable().optional(),
     diskPath: z.string().max(512).optional(),
     diskTotalBytes: z.number().nonnegative().optional(),
     diskUsedBytes: z.number().nonnegative().optional(),
@@ -70,6 +75,14 @@ export async function POST(request: Request) {
     }
   }
 
+  const [hostRow] = await db
+    .select({ rebootRequestedAt: hosts.rebootRequestedAt })
+    .from(hosts)
+    .where(eq(hosts.id, agent.host.id))
+    .limit(1);
+
+  const pendingReboot = hostRow?.rebootRequestedAt != null;
+
   await db
     .update(hosts)
     .set({
@@ -96,5 +109,6 @@ export async function POST(request: Request) {
     ok: true,
     hostId: agent.host.id,
     promotedInstanceIds: promoted.map((r) => r.id),
+    pendingReboot,
   });
 }

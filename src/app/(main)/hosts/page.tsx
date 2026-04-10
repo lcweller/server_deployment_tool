@@ -102,6 +102,11 @@ export default async function HostsPage() {
                             })}
                           </p>
                         ) : null}
+                        {h.status === "pending_removal" ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">
+                            Removal in progress — open this host for status.
+                          </p>
+                        ) : null}
                       </CardContent>
                     </Card>
                   </Link>

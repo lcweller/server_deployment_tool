@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
@@ -67,11 +67,28 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const [{ instanceTotal }] = await db
+    .select({ instanceTotal: count() })
+    .from(serverInstances)
+    .where(eq(serverInstances.hostId, hostId));
+
+  const [{ instancesPendingDelete }] = await db
+    .select({ instancesPendingDelete: count() })
+    .from(serverInstances)
+    .where(
+      and(
+        eq(serverInstances.hostId, hostId),
+        eq(serverInstances.status, "pending_delete")
+      )
+    );
+
   const { enrollmentTokenHash: _h, ...rest } = row;
   return NextResponse.json({
     host: {
       ...rest,
       awaitingEnrollment: row.status === "pending",
+      instanceTotal,
+      instancesPendingDelete,
     },
   });
 }

@@ -207,9 +207,13 @@ export async function provisionInstance(
           : `SteamCMD finished (exit 0). Install dir: ${dir}`,
       });
     } else {
+      const hint =
+        code === 127
+          ? " Exit 127 usually means “command not found” (often bash missing on minimal Linux — install bash or set STEAMLINE_BASH_PATH)."
+          : "";
       await postStatus(apiBase, bearer, inst.id, {
         status: "failed",
-        message: `SteamCMD exited with code ${code}. See instance logs.`,
+        message: `SteamCMD exited with code ${code}.${hint} See instance logs.`,
       });
     }
   } catch (e) {

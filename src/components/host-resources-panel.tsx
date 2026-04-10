@@ -1,3 +1,4 @@
+import { MetricsLoadingQuips } from "@/components/metrics-loading-quips";
 import { UsageBar } from "@/components/usage-bar";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { clampPct, formatBytes } from "@/lib/host-metrics";
@@ -22,17 +23,9 @@ export function HostResourcesPanel({ metrics, lastSeenAt }: Props) {
             className="size-4 animate-pulse text-primary"
             aria-hidden
           />
-          Waiting for host metrics…
+          Gathering telemetry…
         </div>
-        <p className="text-xs text-muted-foreground">
-          The one-line installer normally starts the agent in the background. If
-          this host was enrolled but the process is not running, SSH once and run:{" "}
-          <code className="rounded bg-muted px-1">
-            cd ~/.steamline && nohup node steamline-agent.cjs run
-            &lt;dashboard-url&gt; &gt;&gt; agent.log 2&gt;&amp;1 &amp;
-          </code>
-          . Metrics appear after the first successful heartbeat.
-        </p>
+        <MetricsLoadingQuips />
         <div className="space-y-3 opacity-50">
           <div className="h-2.5 w-full rounded-full bg-muted" />
           <div className="h-2.5 w-full rounded-full bg-muted" />
@@ -54,6 +47,11 @@ export function HostResourcesPanel({ metrics, lastSeenAt }: Props) {
     metrics.diskTotalBytes && metrics.diskUsedBytes !== undefined
       ? `${formatBytes(metrics.diskUsedBytes)} used · ${formatBytes(metrics.diskFreeBytes ?? 0)} free`
       : undefined;
+
+  const cpuHardware =
+    metrics.cpuSockets != null ||
+    metrics.cpuLayoutSummary ||
+    (metrics.cpuModelLines && metrics.cpuModelLines.length > 0);
 
   return (
     <div
@@ -105,12 +103,75 @@ export function HostResourcesPanel({ metrics, lastSeenAt }: Props) {
         )}
       </div>
 
+      {cpuHardware ? (
+        <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="font-medium text-foreground">CPU layout</p>
+          {metrics.cpuLayoutSummary ? (
+            <p className="mt-0.5">{metrics.cpuLayoutSummary}</p>
+          ) : null}
+          {metrics.cpuSockets != null ? (
+            <p className="mt-0.5">
+              Packages (sockets):{" "}
+              <span className="font-mono text-foreground">
+                {metrics.cpuSockets}
+              </span>
+            </p>
+          ) : null}
+          {metrics.cpuModelLines && metrics.cpuModelLines.length > 0 ? (
+            <ul className="mt-1 list-inside list-disc space-y-0.5">
+              {metrics.cpuModelLines.map((line) => (
+                <li key={line} className="font-mono text-[10px] text-foreground/90">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
+      {(metrics.memoryModuleCount != null ||
+        metrics.memoryModuleSummary ||
+        metrics.memTotalBytes) ? (
+        <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="font-medium text-foreground">Memory</p>
+          {metrics.memTotalBytes ? (
+            <p className="mt-0.5">
+              Total capacity:{" "}
+              <span className="font-mono text-foreground">
+                {formatBytes(metrics.memTotalBytes)}
+              </span>
+            </p>
+          ) : null}
+          {metrics.memoryModuleCount != null ? (
+            <p className="mt-0.5">
+              Modules reported:{" "}
+              <span className="font-mono text-foreground">
+                {metrics.memoryModuleCount}
+              </span>
+              {metrics.memoryModuleSummary ? (
+                <span className="block pt-0.5 text-[10px] leading-snug">
+                  {metrics.memoryModuleSummary}
+                </span>
+              ) : null}
+            </p>
+          ) : metrics.memoryModuleSummary ? (
+            <p className="mt-0.5">{metrics.memoryModuleSummary}</p>
+          ) : (
+            <p className="mt-0.5 text-[10px] italic">
+              DIMM details need root on Linux (
+              <code className="rounded bg-muted px-0.5">dmidecode</code>
+              ).
+            </p>
+          )}
+        </div>
+      ) : null}
+
       <UsageBar
         label="CPU load (estimate)"
         percent={cpuPct}
         detail={
           metrics.cpuCores
-            ? `${metrics.loadAvg1m?.toFixed(2) ?? "—"} load · ${metrics.cpuCores} cores`
+            ? `${metrics.loadAvg1m?.toFixed(2) ?? "—"} load · ${metrics.cpuCores} logical cores`
             : undefined
         }
         pulse={live}

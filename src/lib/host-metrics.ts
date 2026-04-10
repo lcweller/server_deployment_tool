@@ -6,12 +6,19 @@ export type HostMetricsSnapshot = {
   platform?: string;
   cpuModel?: string;
   cpuCores?: number;
+  /** CPU packages / sockets when the agent could detect them */
+  cpuSockets?: number | null;
+  cpuLayoutSummary?: string | null;
+  /** Distinct models with counts, e.g. ["2× AMD Ryzen …"] */
+  cpuModelLines?: string[];
   loadAvg1m?: number;
   /** 0–100 rough utilization from load average ÷ cores */
   cpuEstimatePercent?: number;
   memTotalBytes?: number;
   memUsedBytes?: number;
   memUsedPercent?: number;
+  memoryModuleCount?: number | null;
+  memoryModuleSummary?: string | null;
   diskPath?: string;
   diskTotalBytes?: number;
   diskUsedBytes?: number;

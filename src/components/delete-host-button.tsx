@@ -27,8 +27,15 @@ export function DeleteHostButton({
 
   if (status === "pending_removal") {
     return (
-      <span className={cn("text-xs text-muted-foreground", className)}>
-        Removing host…
+      <span
+        className={cn(
+          "max-w-[min(100%,18rem)] text-xs leading-snug text-amber-700 dark:text-amber-400",
+          className
+        )}
+      >
+        Removal in progress — the agent deletes instances, wipes data, then
+        unregisters this host. Keep the agent running until it disappears from
+        your list.
       </span>
     );
   }

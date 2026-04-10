@@ -92,6 +92,8 @@ export const hosts = pgTable("hosts", {
   /** Latest resource snapshot from agent heartbeat (CPU / RAM / disk). */
   hostMetrics: jsonb("host_metrics").$type<HostMetricsSnapshot | null>(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  /** Dashboard requested reboot — agent consumes on next heartbeat. */
+  rebootRequestedAt: timestamp("reboot_requested_at", { withTimezone: true }),
   updateMode: text("update_mode").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

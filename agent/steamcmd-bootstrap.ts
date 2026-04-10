@@ -76,6 +76,23 @@ function extractWin(zip: string, outDir: string): void {
   ], { stdio: "inherit" });
 }
 
+/**
+ * SteamCMD's steamcmd.sh expects bash. Alpine/minimal images often lack /bin/bash → exit 127.
+ */
+function resolveLinuxBash(): string {
+  if (process.env.STEAMLINE_BASH_PATH?.trim()) {
+    return process.env.STEAMLINE_BASH_PATH.trim();
+  }
+  for (const p of ["/usr/bin/bash", "/bin/bash", "/usr/local/bin/bash"]) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  throw new Error(
+    "SteamCMD requires bash (steamcmd.sh). Install it, e.g. apt install bash / apk add bash / dnf install bash, or set STEAMLINE_BASH_PATH to your bash binary."
+  );
+}
+
 function resolveLaunchFromDir(dir: string): SteamCmdLaunch {
   const winExe = walkFindFile(dir, new Set(["steamcmd.exe"]));
   if (winExe) {
@@ -91,7 +108,7 @@ function resolveLaunchFromDir(dir: string): SteamCmdLaunch {
     const bash =
       process.platform === "win32"
         ? process.env.STEAMLINE_BASH_PATH ?? "bash.exe"
-        : "/bin/bash";
+        : resolveLinuxBash();
     return { command: bash, leadArgs: [sh], steamcmdDir: dir };
   }
   const raw = walkFindFile(dir, new Set(["steamcmd"]));

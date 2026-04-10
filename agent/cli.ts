@@ -20,6 +20,7 @@ import {
 import { collectHeartbeatMetrics } from "./collect-metrics";
 import { loadSteamlineApiKeyEarly } from "./load-api-key";
 import { provisionInstance, type RemoteInstance } from "./provision";
+import { performDashboardReboot } from "./reboot";
 
 loadSteamlineApiKeyEarly();
 
@@ -73,6 +74,7 @@ async function enroll(baseUrl: string, token: string) {
 type HeartbeatJson = {
   ok?: boolean;
   promotedInstanceIds?: string[];
+  pendingReboot?: boolean;
 };
 
 async function heartbeatOnce(
@@ -116,6 +118,14 @@ async function heartbeat(baseUrl: string) {
       "Queued server instance(s):",
       data.promotedInstanceIds.join(", ")
     );
+  }
+  if (ok && data?.pendingReboot) {
+    console.error("[steamline] Dashboard requested reboot — scheduling…");
+    try {
+      await performDashboardReboot(baseUrl, getBearer());
+    } catch (e) {
+      console.error("[steamline] reboot handler failed:", e);
+    }
   }
 }
 
@@ -204,6 +214,14 @@ async function runLoop(baseUrl: string, intervalMs: number) {
         "queued instance(s):",
         data.promotedInstanceIds.join(", ")
       );
+    }
+    if (ok && data?.pendingReboot) {
+      console.error("[steamline] Dashboard requested reboot — scheduling…");
+      try {
+        await performDashboardReboot(baseUrl, getBearer());
+      } catch (e) {
+        console.error("[steamline] reboot handler failed:", e);
+      }
     }
     await processDeletionQueue(baseUrl);
     await maybeRemoveHost(baseUrl);

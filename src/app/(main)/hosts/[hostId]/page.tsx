@@ -1,12 +1,14 @@
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { DashboardPoller } from "@/components/dashboard-poller";
 import { DeleteHostButton } from "@/components/delete-host-button";
+import { HostRemovalStatus } from "@/components/host-removal-status";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
 import { HostResourcesPanel } from "@/components/host-resources-panel";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
+import { RequestRebootButton } from "@/components/request-reboot-button";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -56,6 +58,16 @@ export default async function HostDetailPage({
     .from(serverInstances)
     .where(eq(serverInstances.hostId, hostId));
 
+  const [{ instancesPendingDelete }] = await db
+    .select({ instancesPendingDelete: count() })
+    .from(serverInstances)
+    .where(
+      and(
+        eq(serverInstances.hostId, hostId),
+        eq(serverInstances.status, "pending_delete")
+      )
+    );
+
   const recentInstances = await db
     .select({
       id: serverInstances.id,
@@ -78,6 +90,9 @@ export default async function HostDetailPage({
         description="Agent status, live resource usage, and servers on this machine."
         actions={
           <>
+            {host.status === "online" || host.status === "offline" ? (
+              <RequestRebootButton hostId={host.id} />
+            ) : null}
             <DeleteHostButton
               hostId={host.id}
               hostName={host.name}
@@ -93,6 +108,14 @@ export default async function HostDetailPage({
         }
       />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
+        {host.status === "pending_removal" ? (
+          <HostRemovalStatus
+            hostId={host.id}
+            initialStatus={host.status}
+            instancesPendingDelete={instancesPendingDelete}
+            instanceTotal={instanceCount}
+          />
+        ) : null}
         {host.status !== "pending" ? (
           <HostResourcesPanel
             metrics={host.hostMetrics}
