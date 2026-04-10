@@ -23,7 +23,7 @@ This guide assumes you push this repo to **GitHub** and use the included workflo
 | `APP_PUBLIC_URL` | Full public URL with scheme, no trailing slash (e.g. `https://steamline.example.com`). Used for email links and Stripe redirects. |
 | `CRON_SECRET` | Long random string; protect `/api/cron/*` calls. |
 | `DATABASE_URL` | Handled for you if you use `docker-compose.stack.yml` (Postgres service). |
-| Email (optional) | `SMTP_*` for verification mail. |
+| Email (optional) | `SMTP_*` for verification mail. Self-hosted [Docker-Mailserver + Steamline](SMTP-DOCKER-MAILSERVER.md). |
 | Turnstile (recommended for **public** sites) | **`TURNSTILE_SITE_KEY`** + **`TURNSTILE_SECRET_KEY`** at container runtime (pre-built images ignore `NEXT_PUBLIC_*` unless you rebuild). For **private/LAN** only, `STEAMLINE_SKIP_TURNSTILE=1` (never on a public URL). |
 | Stripe (optional) | `STRIPE_*` if you use billing. |
 

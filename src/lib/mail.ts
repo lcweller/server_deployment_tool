@@ -33,8 +33,25 @@ export async function sendMail(opts: {
   });
 }
 
+/**
+ * Base URL for links in emails (verification, etc.). Must match the URL users use in the browser.
+ * In Docker/production, set `APP_PUBLIC_URL` (e.g. https://steamline.example.com) — no trailing slash.
+ *
+ * Uses `process.env["APP_PUBLIC_URL"]` so the value is read at **runtime** in Docker (not inlined at `next build`).
+ */
 export function publicAppUrl() {
-  return (
-    process.env.APP_PUBLIC_URL?.replace(/\/$/, "") ?? "http://localhost:3000"
-  );
+  const raw =
+    typeof process !== "undefined"
+      ? process.env["APP_PUBLIC_URL"]?.trim() ||
+        process.env["NEXT_PUBLIC_APP_URL"]?.trim()
+      : "";
+  if (raw) {
+    return raw.replace(/\/$/, "");
+  }
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[steamline] APP_PUBLIC_URL is not set — email links use http://localhost:3000. Set APP_PUBLIC_URL to your public https URL (e.g. in the Steamline container env)."
+    );
+  }
+  return "http://localhost:3000";
 }
