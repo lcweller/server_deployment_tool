@@ -21,8 +21,9 @@ await esbuild.build({
   target: "node18",
   format: "cjs",
   outfile,
+  /** Single shebang on line 1 — entry file must not contain another #! or Node parses the second as JS. */
   banner: {
-    js: "#!/usr/bin/env node",
+    js: "#!/usr/bin/env node\n",
   },
   logLevel: "info",
 });

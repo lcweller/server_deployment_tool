@@ -1,4 +1,3 @@
-#!/usr/bin/env npx tsx
 /**
  * Steamline Linux agent CLI (minimal).
  *
