@@ -30,7 +30,7 @@ async function main() {
     const t2 = {
       description:
         "Example row for popularity sorting UI; confirm SteamCMD login mode for this title.",
-      loginMode: "unknown",
+      loginMode: "anonymous",
     };
 
     await sql`

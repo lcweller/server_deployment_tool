@@ -64,6 +64,13 @@
       "when": 1775769000000,
       "tag": "0008_instance_allocated_ports",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775770000000,
+      "tag": "0009_host_steam_username",
+      "breakpoints": true
     }
   ]
 }

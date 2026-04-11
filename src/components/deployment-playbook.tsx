@@ -44,13 +44,40 @@ export function DeploymentPlaybook({
     provisionMessage?.toLowerCase().includes("dedicated command started") ??
     false;
   const pub = hostMetrics?.publicIpv4?.trim();
-  const isWin =
-    (hostMetrics?.platform ?? "").toLowerCase() === "win32" ||
-    (hostMetrics?.platform ?? "").toLowerCase() === "windows";
+  const plat = (hostMetrics?.platform ?? "").toLowerCase();
+  const isWin = plat === "win32" || plat === "windows";
+  const isLinux = plat === "linux";
 
   return (
     <div className="mt-3 rounded-md border border-primary/15 bg-primary/[0.04] p-3 text-xs leading-relaxed">
-      <p className="font-semibold text-foreground">
+      <p className="font-semibold text-foreground">What Steamline automates</p>
+      <ul className="mt-1.5 list-disc space-y-1 pl-4 text-muted-foreground">
+        <li>Non-conflicting game/query ports per host, plus on-host bind checks</li>
+        <li>SteamCMD cache reuse and game file install via SteamCMD</li>
+        <li>
+          Start command: host override → catalog →{" "}
+          <strong className="text-foreground/90">built-in Steam App preset</strong>{" "}
+          (known titles) →{" "}
+          <strong className="text-foreground/90">auto-detected</strong> binary;
+          catalog{" "}
+          <span className="font-mono text-foreground/80">defaultLaunchArgs</span>{" "}
+          merges with presets for extra flags
+        </li>
+        <li>Windows inbound firewall rules (UDP/TCP) when permitted</li>
+        {isLinux ? (
+          <li>
+            Linux <span className="font-mono text-foreground/80">firewall-cmd</span>{" "}
+            port opens when firewalld is available
+          </li>
+        ) : null}
+        <li>
+          Router <strong className="text-foreground/90">UPnP</strong> port maps
+          (when the router exposes an IGD and UPnP is on — see logs)
+        </li>
+        <li>Public IPv4 on each heartbeat (for connect hints)</li>
+      </ul>
+
+      <p className="mt-3 font-semibold text-foreground">
         Your server ports (assigned automatically on this host)
       </p>
       <p className="mt-1 font-mono text-[11px] text-foreground/90">{portsLine}</p>
@@ -87,50 +114,62 @@ export function DeploymentPlaybook({
         </p>
       ) : null}
 
-      <p className="mt-3 font-semibold text-foreground">Router (still manual)</p>
+      <p className="mt-3 font-semibold text-foreground">Router &amp; internet</p>
       <p className="mt-1 text-muted-foreground">
-        Forward <strong>UDP</strong> (and <strong>TCP</strong> if your game’s
-        docs require it) for the ports above to the LAN IP of{" "}
+        The agent already tries <strong>UPnP</strong> on many home routers so you
+        may not need manual forwarding. If friends still cannot connect, add
+        explicit <strong>UDP</strong> (and <strong>TCP</strong> if the game
+        requires it) port forwarding to the LAN IP of{" "}
         {hostName ? (
           <span className="text-foreground">&quot;{hostName}&quot;</span>
         ) : (
           "this host"
-        )}
-        . Open your router admin (often{" "}
-        <span className="font-mono text-foreground/80">192.168.1.1</span>) → Port
-        forwarding / NAT / Virtual server.
+        )}{" "}
+        in your router admin.
       </p>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        If inbound connections never work even with forwarding, your ISP may use
-        carrier-grade NAT — you would need a VPS or a business line with a real
-        public IP.
+        Carrier-grade NAT or disabled UPnP can still block inbound traffic — then
+        use a VPS or a line with a real public IP.
       </p>
 
-      <p className="mt-3 font-semibold text-foreground">Launch command</p>
+      <p className="mt-3 font-semibold text-foreground">Fine-tuning (optional)</p>
       <p className="mt-1 text-muted-foreground">
-        The agent runs{" "}
+        Override start with{" "}
         <span className="font-mono text-foreground/80">
           STEAMLINE_AFTER_INSTALL_CMD
-        </span>{" "}
-        if set on the host; otherwise it uses the catalog entry’s{" "}
-        <span className="font-mono text-foreground/80">afterInstallCmd</span>{" "}
-        template field. Ports are passed as environment variables (
-        <span className="font-mono text-foreground/80">STEAMLINE_GAME_PORT</span>,{" "}
-        <span className="font-mono text-foreground/80">STEAMLINE_QUERY_PORT</span>
-        , etc.); use{" "}
+        </span>
+        , or set catalog{" "}
+        <span className="font-mono text-foreground/80">afterInstallCmd</span> /{" "}
+        <span className="font-mono text-foreground/80">defaultLaunchArgs</span>{" "}
+        for exact game flags. Env vars{" "}
+        <span className="font-mono text-foreground/80">STEAMLINE_GAME_PORT</span> /{" "}
+        <span className="font-mono text-foreground/80">STEAMLINE_QUERY_PORT</span>{" "}
+        are always set; use{" "}
         <span className="font-mono text-foreground/80">%STEAMLINE_GAME_PORT%</span>{" "}
-        in Windows cmd or{" "}
+        in cmd or{" "}
         <span className="font-mono text-foreground/80">
           {"$" + "{STEAMLINE_GAME_PORT}"}
         </span>{" "}
-        in catalog strings (expanded by the agent).
+        in catalog strings. Disable slices of automation:{" "}
+        <span className="font-mono text-foreground/80">STEAMLINE_SKIP_UPNP</span>,{" "}
+        <span className="font-mono text-foreground/80">STEAMLINE_SKIP_FIREWALL</span>
+        ,{" "}
+        <span className="font-mono text-foreground/80">
+          STEAMLINE_SKIP_LINUX_FIREWALL
+        </span>
+        ,{" "}
+        <span className="font-mono text-foreground/80">
+          STEAMLINE_DISABLE_AUTO_LAUNCH
+        </span>
+        .
       </p>
 
       {status === "running" && !started ? (
         <p className="mt-3 border-t border-border/50 pt-2 text-[11px] text-amber-700 dark:text-amber-500/90">
-          Install finished but the agent did not report a started dedicated
-          process. Set a host start command or extend the catalog template for
-          this game so the real server binary runs with the ports above.
+          Install finished but no process stayed running (wrong binary pick,
+          missing game flags, or immediate exit). Check instance logs — set
+          catalog <span className="font-mono">defaultLaunchArgs</span> or a full{" "}
+          <span className="font-mono">afterInstallCmd</span> for that title.
         </p>
       ) : null}
     </div>

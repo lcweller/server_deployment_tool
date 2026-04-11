@@ -1,5 +1,6 @@
 import { and, count, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { db } from "@/db";
 import { hosts, serverInstances } from "@/db/schema";
@@ -90,5 +91,76 @@ export async function GET(_request: Request, ctx: RouteCtx) {
       instanceTotal,
       instancesPendingDelete,
     },
+  });
+}
+
+const patchHostBody = z
+  .object({
+    steamUsername: z.string().max(64).nullable().optional(),
+  })
+  .transform((data) => {
+    const v = data.steamUsername;
+    if (v === undefined) {
+      return { steamUsername: undefined as string | null | undefined };
+    }
+    if (v === null) {
+      return { steamUsername: null as string | null };
+    }
+    const t = v.trim();
+    return { steamUsername: t.length === 0 ? null : t };
+  });
+
+export async function PATCH(request: Request, ctx: RouteCtx) {
+  const auth = await requireVerifiedUser();
+  if ("error" in auth) {
+    return auth.error;
+  }
+
+  const { hostId } = await ctx.params;
+
+  const rows = await db
+    .select()
+    .from(hosts)
+    .where(and(eq(hosts.id, hostId), eq(hosts.userId, auth.user.id)))
+    .limit(1);
+
+  const host = rows[0];
+  if (!host) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = patchHostBody.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid body", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  if (parsed.data.steamUsername === undefined) {
+    return NextResponse.json(
+      { error: "No updatable fields supplied (expected steamUsername)." },
+      { status: 400 }
+    );
+  }
+
+  await db
+    .update(hosts)
+    .set({
+      steamUsername: parsed.data.steamUsername,
+    })
+    .where(eq(hosts.id, hostId));
+
+  return NextResponse.json({
+    ok: true,
+    hostId,
+    steamUsername: parsed.data.steamUsername,
   });
 }

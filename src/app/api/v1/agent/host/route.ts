@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       id: hosts.id,
       name: hosts.name,
       status: hosts.status,
+      steamUsername: hosts.steamUsername,
     })
     .from(hosts)
     .where(eq(hosts.id, agent.host.id))

@@ -1,9 +1,10 @@
 /**
  * Remote provisioning: real SteamCMD by default; stub only if STEAMLINE_PROVISION_STUB=1.
  */
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 
+import { guessAutoLaunchPlan, type AutoLaunchPlan } from "./auto-launch";
 import {
   collectSteamCmdDiagnostics,
   ensureSteamCmd,
@@ -12,6 +13,16 @@ import {
 import { instanceInstallDir } from "./paths";
 import { formatPortEnv, resolvePortsWithLocalProbe } from "./port-probe";
 import { writeSteamlinePid } from "./pidfile";
+import { applyLinuxFirewallForPorts } from "./linux-firewall";
+import { tryUpnpPortForward } from "./upnp-portmap";
+import {
+  launchPresetFor,
+  resolvePresetShellCommand,
+} from "./launch-presets";
+import {
+  resolveSteamCmdLoginPlan,
+  type SteamCmdLoginPlan,
+} from "./steam-auth";
 import { applyWindowsFirewallForPorts } from "./windows-firewall";
 
 export type RemoteInstance = {
@@ -110,17 +121,129 @@ function expandEnvPlaceholders(cmd: string, env: NodeJS.ProcessEnv): string {
   });
 }
 
-/** Host env wins; else catalog `template.afterInstallCmd`. */
-function resolveStartCommand(inst: RemoteInstance): string | undefined {
+type StartPlan =
+  | { source: "env" | "catalog" | "preset"; kind: "shell"; cmd: string }
+  | { source: "auto"; plan: AutoLaunchPlan };
+
+/**
+ * Host env → catalog `afterInstallCmd` → built-in Steam App ID preset →
+ * auto-detect binary under install dir.
+ */
+function resolveStartPlan(inst: RemoteInstance, installDir: string): StartPlan | null {
   const envCmd = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim();
   if (envCmd) {
-    return envCmd;
+    return { source: "env", kind: "shell", cmd: envCmd };
   }
   const raw = inst.template?.afterInstallCmd;
   if (typeof raw === "string" && raw.trim()) {
-    return raw.trim();
+    return { source: "catalog", kind: "shell", cmd: raw.trim() };
   }
-  return undefined;
+  const preset = launchPresetFor(inst.steamAppId);
+  const presetCmd =
+    preset != null ? resolvePresetShellCommand(preset) : undefined;
+  if (presetCmd) {
+    return { source: "preset", kind: "shell", cmd: presetCmd };
+  }
+  const auto = guessAutoLaunchPlan(installDir);
+  if (auto) {
+    return { source: "auto", plan: auto };
+  }
+  return null;
+}
+
+/** Preset `defaultLaunchArgs` then catalog `defaultLaunchArgs` (for auto / preset shell). */
+function mergedExtraArgsForAuto(
+  inst: RemoteInstance,
+  portEnv: NodeJS.ProcessEnv
+): string[] {
+  const preset = launchPresetFor(inst.steamAppId);
+  const chunks: string[] = [];
+  if (typeof preset?.defaultLaunchArgs === "string" && preset.defaultLaunchArgs.trim()) {
+    chunks.push(expandEnvPlaceholders(preset.defaultLaunchArgs.trim(), portEnv));
+  }
+  if (
+    typeof inst.template?.defaultLaunchArgs === "string" &&
+    inst.template.defaultLaunchArgs.trim()
+  ) {
+    chunks.push(
+      expandEnvPlaceholders(inst.template.defaultLaunchArgs.trim(), portEnv)
+    );
+  }
+  return chunks.join(" ").split(/\s+/).filter(Boolean);
+}
+
+/** Catalog-only extra args when catalog supplies full `afterInstallCmd`. */
+function extraArgsForCatalogShell(
+  inst: RemoteInstance,
+  portEnv: NodeJS.ProcessEnv
+): string[] {
+  const raw = inst.template?.defaultLaunchArgs;
+  if (typeof raw !== "string" || !raw.trim()) {
+    return [];
+  }
+  return expandEnvPlaceholders(raw.trim(), portEnv)
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function shellAppendArgs(
+  plan: StartPlan,
+  inst: RemoteInstance,
+  portEnv: NodeJS.ProcessEnv
+): string[] {
+  if (plan.source === "env") {
+    return [];
+  }
+  if (plan.source === "catalog") {
+    return extraArgsForCatalogShell(inst, portEnv);
+  }
+  if (plan.source === "preset") {
+    return mergedExtraArgsForAuto(inst, portEnv);
+  }
+  return [];
+}
+
+function spawnStartPlan(
+  inst: RemoteInstance,
+  plan: StartPlan,
+  portEnv: NodeJS.ProcessEnv,
+  installDir: string
+): ChildProcess {
+  const extrasAuto = mergedExtraArgsForAuto(inst, portEnv);
+
+  if (plan.source !== "auto") {
+    const base = expandEnvPlaceholders(plan.cmd, portEnv);
+    const append = shellAppendArgs(plan, inst, portEnv);
+    const cmd =
+      append.length > 0 ? `${base} ${append.join(" ")}` : base;
+    return spawn(cmd, [], {
+      cwd: installDir,
+      shell: true,
+      detached: true,
+      stdio: "ignore",
+      env: portEnv,
+    });
+  }
+  const p = plan.plan;
+  if (p.kind === "shell") {
+    const base = expandEnvPlaceholders(p.cmd, portEnv);
+    const cmd =
+      extrasAuto.length > 0 ? `${base} ${extrasAuto.join(" ")}` : base;
+    return spawn(cmd, [], {
+      cwd: p.cwd,
+      shell: true,
+      detached: true,
+      stdio: "ignore",
+      env: portEnv,
+    });
+  }
+  return spawn(p.file, [...p.args, ...extrasAuto], {
+    cwd: p.cwd,
+    shell: false,
+    detached: true,
+    stdio: "ignore",
+    env: portEnv,
+  });
 }
 
 function instanceDataDir(instanceId: string): string {
@@ -132,21 +255,34 @@ function instanceDataDir(instanceId: string): string {
 const DEFAULT_PATH =
   "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
+function steamCmdArgsForUpdate(
+  installDir: string,
+  appId: string,
+  login: SteamCmdLoginPlan
+): string[] {
+  const steamArgs: string[] = ["+force_install_dir", installDir];
+  if (login.kind === "steam" && login.guard) {
+    steamArgs.push("+set_steam_guard_code", login.guard);
+  }
+  if (login.kind === "steam") {
+    steamArgs.push("+login", login.user, login.pass);
+  } else {
+    steamArgs.push("+login", "anonymous");
+  }
+  steamArgs.push("+app_update", appId, "validate", "+quit");
+  return steamArgs;
+}
+
 async function runSteamCmdWithCapture(
   launch: SteamCmdLaunch,
   appId: string,
-  installDir: string
+  installDir: string,
+  login: SteamCmdLoginPlan
 ): Promise<{ code: number; allLines: string[] }> {
-  const steamArgs = [
-    "+force_install_dir",
-    installDir,
-    "+login",
-    "anonymous",
-    "+app_update",
-    appId,
-    "validate",
-    "+quit",
-  ];
+  if (login.kind === "missing_creds") {
+    throw new Error("runSteamCmdWithCapture: missing_creds should be handled before spawn");
+  }
+  const steamArgs = steamCmdArgsForUpdate(installDir, appId, login);
   const allArgs = [...launch.leadArgs, ...steamArgs];
 
   return new Promise((resolve, reject) => {
@@ -242,10 +378,30 @@ export async function provisionInstance(
       ]
     );
 
+    const loginPlan = resolveSteamCmdLoginPlan(inst);
+    if (loginPlan.kind === "missing_creds") {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] Licensed SteamCMD install requires host credentials.",
+        `[steamline] ${loginPlan.reason}`,
+      ]);
+      await postStatus(apiBase, bearer, inst.id, {
+        status: "failed",
+        message: loginPlan.reason,
+      });
+      return;
+    }
+
+    if (loginPlan.kind === "steam") {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] SteamCMD will use STEAMLINE_STEAM_USERNAME (licensed app_update — password is not logged).",
+      ]);
+    }
+
     const { code, allLines } = await runSteamCmdWithCapture(
       launch,
       inst.steamAppId,
-      dir
+      dir,
+      loginPlan
     );
 
     const nonEmpty = allLines.filter((l) => l.length > 0);
@@ -312,28 +468,47 @@ export async function provisionInstance(
         ]);
       }
 
-      const startCmdRaw = resolveStartCommand(inst);
-      const startCmd = startCmdRaw
-        ? expandEnvPlaceholders(startCmdRaw, portEnv)
-        : undefined;
-      if (startCmd) {
-        const src = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim()
-          ? "STEAMLINE_AFTER_INSTALL_CMD"
-          : "catalog template.afterInstallCmd";
+      const linuxFw = applyLinuxFirewallForPorts(dir, resolvedPorts ?? {});
+      if (linuxFw.length > 0) {
         await postLogLines(apiBase, bearer, inst.id, [
-          `[steamline] Starting dedicated process (${src})…`,
+          "[steamline] Linux host firewall (firewalld, best effort):",
+          ...linuxFw,
+        ]);
+      }
+
+      const upnpLogs = await tryUpnpPortForward(inst.id, dir, resolvedPorts ?? {});
+      if (upnpLogs.length > 0) {
+        await postLogLines(apiBase, bearer, inst.id, [
+          "[steamline] Router UPnP (best effort — IGD must be enabled on the router):",
+          ...upnpLogs,
+        ]);
+      }
+
+      const startPlan = resolveStartPlan(inst, dir);
+      let dedicatedStarted = false;
+      if (startPlan) {
+        const srcLabel =
+          startPlan.source === "env"
+            ? "STEAMLINE_AFTER_INSTALL_CMD"
+            : startPlan.source === "catalog"
+              ? "catalog template.afterInstallCmd"
+              : startPlan.source === "preset"
+                ? `built-in Steam App preset (${launchPresetFor(inst.steamAppId)?.label ?? inst.steamAppId ?? "?"})`
+                : "auto-detected binary under install tree (heuristic)";
+        await postLogLines(apiBase, bearer, inst.id, [
+          `[steamline] Starting dedicated process (${srcLabel})…`,
           "[steamline] Environment includes STEAMLINE_GAME_PORT, STEAMLINE_QUERY_PORT, STEAMLINE_INSTALL_DIR, STEAMLINE_PORTS_JSON (and %STEAMLINE_*% expands on Windows cmd).",
         ]);
+        if (startPlan.source === "auto") {
+          await postLogLines(apiBase, bearer, inst.id, [
+            "[steamline] No explicit start command — scanning install folder for a likely server executable (disable with STEAMLINE_DISABLE_AUTO_LAUNCH=1).",
+          ]);
+        }
         try {
-          const child = spawn(startCmd, [], {
-            cwd: dir,
-            shell: true,
-            detached: true,
-            stdio: "ignore",
-            env: portEnv,
-          });
+          const child = spawnStartPlan(inst, startPlan, portEnv, dir);
           child.unref();
           if (child.pid != null) {
+            dedicatedStarted = true;
             writeSteamlinePid(inst.id, child);
             await postLogLines(apiBase, bearer, inst.id, [
               `[steamline] Wrote steamline.pid for pid ${child.pid} (stop via dashboard delete).`,
@@ -347,14 +522,14 @@ export async function provisionInstance(
         }
       } else {
         await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] No start command: set STEAMLINE_AFTER_INSTALL_CMD on the host or add template.afterInstallCmd in the catalog for this game.",
+          "[steamline] No start path: install produced no recognizable server binary and STEAMLINE_AFTER_INSTALL_CMD, catalog afterInstallCmd, and auto-launch were all empty/disabled.",
         ]);
       }
       const statusBody: Record<string, unknown> = {
         status: "running",
-        message: startCmd
+        message: dedicatedStarted
           ? `SteamCMD OK; dedicated command started. Install dir: ${dir}`
-          : `SteamCMD finished (exit 0). No dedicated start command configured. Install dir: ${dir}`,
+          : `SteamCMD finished (exit 0). No dedicated process started (no command or auto-launch failed). Install dir: ${dir}`,
       };
       if (resolvedPorts && Object.keys(resolvedPorts).length > 0) {
         statusBody.allocatedPorts = resolvedPorts;

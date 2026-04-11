@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/db";
 import { catalogEntries } from "@/db/schema";
+import { launchPresetFor } from "@/lib/launch-presets";
 
 export default async function CatalogPage() {
   const entries = await db
@@ -63,9 +64,20 @@ export default async function CatalogPage() {
                       <CardTitle className="text-base leading-snug">
                         {row.name}
                       </CardTitle>
-                      <Badge variant="secondary" className="shrink-0 tabular-nums">
-                        {row.popularityScore}
-                      </Badge>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        {launchPresetFor(row.steamAppId) ? (
+                          <Badge
+                            variant="default"
+                            className="text-[10px] font-normal"
+                            title="Steamline ships a built-in launch preset for this Steam App ID"
+                          >
+                            Built-in preset
+                          </Badge>
+                        ) : null}
+                        <Badge variant="secondary" className="tabular-nums">
+                          {row.popularityScore}
+                        </Badge>
+                      </div>
                     </div>
                     <CardDescription className="font-mono text-xs">
                       App {row.steamAppId} · {row.slug}

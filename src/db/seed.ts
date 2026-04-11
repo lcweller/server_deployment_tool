@@ -50,7 +50,7 @@ async function main() {
       template: {
         description:
           "Example row for popularity sorting UI; confirm SteamCMD login mode for this title.",
-        loginMode: "unknown",
+        loginMode: "anonymous",
         defaultPorts: { game: 16261, query: 16262, stride: 2 },
         afterInstallCmd:
           'node -e "console.log(\\"[steamline] catalog hook\\", process.env.STEAMLINE_GAME_PORT); process.exit(0);"',

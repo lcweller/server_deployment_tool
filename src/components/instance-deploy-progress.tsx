@@ -71,7 +71,7 @@ function explain(
       headline: "Install complete",
       detail:
         provisionMessage ||
-        "SteamCMD finished and game files are on disk. No dedicated process was started — set STEAMLINE_AFTER_INSTALL_CMD on the host or add catalog template.afterInstallCmd for this game.",
+        "SteamCMD finished and game files are on disk. No dedicated process was started — check logs; set STEAMLINE_AFTER_INSTALL_CMD, catalog afterInstallCmd, or ensure a server binary is present for auto-launch.",
       pct: 100,
       pulse: false,
       barMode: "determinate",

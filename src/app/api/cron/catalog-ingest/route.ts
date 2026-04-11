@@ -15,6 +15,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await ingestSteamCatalog({ maxRows: 500 });
+  const url = new URL(request.url);
+  const maxRowsRaw = url.searchParams.get("maxRows");
+  const maxRows =
+    maxRowsRaw != null && maxRowsRaw !== ""
+      ? Number(maxRowsRaw)
+      : undefined;
+
+  const result = await ingestSteamCatalog({
+    maxRows: Number.isFinite(maxRows) ? maxRows : undefined,
+  });
   return NextResponse.json(result);
 }

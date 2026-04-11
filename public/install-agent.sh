@@ -7,6 +7,13 @@
 # After enroll, starts the agent in the background (no second SSH session needed).
 # Set STEAMLINE_INSTALL_SKIP_RUN=1 to only enroll and write steamline-agent.env.
 #
+# Agent automation (defaults ON — set to 1 to skip pieces):
+#   STEAMLINE_SKIP_UPNP              — do not ask the router (UPnP IGD) to forward ports
+#   STEAMLINE_SKIP_FIREWALL          — Windows: skip netsh inbound rules
+#   STEAMLINE_SKIP_LINUX_FIREWALL    — Linux: skip firewalld --add-port
+#   STEAMLINE_DISABLE_AUTO_LAUNCH    — do not guess a dedicated .exe/.x86_64 after install
+#   STEAMLINE_UPNP_LEASE_SEC         — UPnP mapping lifetime in seconds (default 7200)
+#
 # Minimal Ubuntu: run with sudo so dependencies can be installed, or set STEAMLINE_APT_INSTALL=1.
 # Set STEAMLINE_SKIP_APT=1 to never run apt/apk.
 # Set STEAMLINE_ALLOW_DUPLICATE_ENROLL=1 to bypass the "already installed" guard (not recommended).

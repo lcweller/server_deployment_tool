@@ -99,6 +99,11 @@ export const hosts = pgTable("hosts", {
    * Stable id for this OS instance — prevents enrolling two dashboard hosts from the same machine.
    */
   machineFingerprint: text("machine_fingerprint"),
+  /**
+   * Optional Steam persona / login name for licensed SteamCMD installs.
+   * The agent never reads the password from the API — set credentials only on the host (env or files).
+   */
+  steamUsername: text("steam_username"),
   updateMode: text("update_mode").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

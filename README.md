@@ -119,10 +119,12 @@ The first time, it creates **`steamline-agent.env`**. Paste the **`apiKey`** fro
 
 | Env | Behavior |
 |-----|----------|
-| _(default)_ | Downloads SteamCMD into `steamline-data/.cache/steamcmd` if missing, then runs it with anonymous login + `app_update` for the catalog Steam App ID. Install dir: `./steamline-data/instances/<id>` or `STEAMLINE_INSTANCE_ROOT`. |
+| _(default)_ | Downloads SteamCMD into `steamline-data/.cache/steamcmd` if missing, then runs `app_update` for the catalog Steam App ID (anonymous login unless the title requires a licensed account — see host page **Steam licensed installs**). Install dir: `./steamline-data/instances/<id>` or `STEAMLINE_INSTANCE_ROOT`. |
 | `STEAMLINE_PROVISION_STUB=1` | Skips real SteamCMD; marks **`running`** with a stub message (dev only). |
 
 Optional: `STEAMLINE_STEAMCMD_PATH` to use an existing SteamCMD binary; `STEAMLINE_DATA_ROOT` / `STEAMLINE_INSTANCE_ROOT` for data locations.
+
+**Licensed SteamCMD:** set `STEAMLINE_STEAM_USERNAME` plus `STEAMLINE_STEAM_PASSWORD` or `STEAMLINE_STEAM_PASSWORD_FILE` on the host for titles that require it (for example CS2 / App 730). Optional `STEAMLINE_STEAM_GUARD_CODE` for email Guard on that run. Run `node steamline-agent.cjs steam-login [API_BASE_URL]` on the host for an interactive SteamCMD session. Passwords are never stored in the dashboard API.
 
 **Dedicated process (optional):** After a successful SteamCMD install, set **`STEAMLINE_AFTER_INSTALL_CMD`** to a shell command run in the instance install directory (e.g. start your dedicated server). The agent spawns it detached and writes **`steamline.pid`** so dashboard **Delete** can stop the process before removing files.
 

@@ -8,6 +8,8 @@
  *     → heartbeats + provisions queued servers (stub or SteamCMD — see README)
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts instances <API_BASE_URL>
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts ack <API_BASE_URL> <INSTANCE_ID>
+ *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts steam-login [API_BASE_URL]
+ *     → interactive SteamCMD (Steam Guard); optional URL to load saved Steam username hint
  */
 
 import { program } from "commander";
@@ -23,6 +25,7 @@ import { loadSteamlineApiKeyEarly } from "./load-api-key";
 import { provisionInstance, type RemoteInstance } from "./provision";
 import { performDashboardReboot } from "./reboot";
 import { getMachineFingerprint } from "./machine-fingerprint";
+import { runInteractiveSteamLogin } from "./steam-login";
 
 loadSteamlineApiKeyEarly();
 
@@ -349,6 +352,19 @@ program
   .description("draft → queued (rare; heartbeat does this automatically)")
   .action(async (baseUrl: string, instanceId: string) => {
     await ackInstance(baseUrl, instanceId);
+  });
+
+program
+  .command("steam-login")
+  .argument(
+    "[baseUrl]",
+    "Optional API base URL — with STEAMLINE_API_KEY, loads dashboard Steam username hint"
+  )
+  .description(
+    "Open interactive SteamCMD on this host (complete Steam Guard; credentials stay local)"
+  )
+  .action(async (baseUrl?: string) => {
+    await runInteractiveSteamLogin(baseUrl);
   });
 
 program.parse();

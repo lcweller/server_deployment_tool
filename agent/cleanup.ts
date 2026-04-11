@@ -7,6 +7,8 @@ import * as path from "node:path";
 
 import type { RemoteInstance } from "./provision";
 import { instanceInstallDir } from "./paths";
+import { removeLinuxFirewallForPorts } from "./linux-firewall";
+import { removeUpnpPortMappings } from "./upnp-portmap";
 import { removeWindowsFirewallRulesForInstance } from "./windows-firewall";
 
 function base(apiBase: string) {
@@ -77,6 +79,14 @@ export async function cleanupPendingDelete(
   const dir = instanceInstallDir(inst.id);
   try {
     if (fs.existsSync(dir)) {
+      const upnpLogs = await removeUpnpPortMappings(dir);
+      for (const line of upnpLogs) {
+        console.error(`[steamline] ${line}`);
+      }
+      const lfLogs = removeLinuxFirewallForPorts(dir);
+      for (const line of lfLogs) {
+        console.error(`[steamline] ${line}`);
+      }
       const fwLogs = removeWindowsFirewallRulesForInstance(dir);
       for (const line of fwLogs) {
         console.error(`[steamline] ${line}`);
@@ -90,7 +100,9 @@ export async function cleanupPendingDelete(
   console.error(`[steamline] purged ${inst.id}`);
 }
 
-type HostSelf = { host: { id: string; status: string } };
+type HostSelf = {
+  host: { id: string; status: string; steamUsername?: string | null };
+};
 
 export async function fetchHostSelf(
   apiBase: string,
