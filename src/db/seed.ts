@@ -37,6 +37,7 @@ async function main() {
         description:
           "Placeholder template for classic SRCDS-style titles; verify App ID and launch flags before production.",
         loginMode: "anonymous",
+        defaultPorts: { game: 27015, query: 27016, stride: 2 },
       },
       popularityScore: 100,
     },
@@ -48,6 +49,7 @@ async function main() {
         description:
           "Example row for popularity sorting UI; confirm SteamCMD login mode for this title.",
         loginMode: "unknown",
+        defaultPorts: { game: 16261, query: 16262, stride: 2 },
       },
       popularityScore: 85,
     },

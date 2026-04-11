@@ -1,5 +1,10 @@
 /**
  * Download and extract Valve SteamCMD if not already present.
+ *
+ * One extracted SteamCMD tree is shared per host under `cacheRoot()` (see `.ready` marker).
+ * Each game server instance uses its own install directory (`instanceInstallDir`); only SteamCMD
+ * is reused, not game files. Provisions run sequentially so two SteamCMD processes do not fight
+ * over the same cache directory.
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -183,6 +188,12 @@ export function collectSteamCmdDiagnostics(launch: SteamCmdLaunch): string[] {
       r(`file ${label}: ${fileOut.replace(/\s+/g, " ")}`);
     }
     if (label === "steamcmd") {
+      const interp = readElfInterpreter(p);
+      if (interp) {
+        r(
+          `PT_INTERP=${interp} exists=${fs.existsSync(interp)} (if false, install libc6-i386 on amd64)`
+        );
+      }
       const lddOut = tryExecFileOut("ldd", [p]);
       if (lddOut) {
         for (const line of lddOut.split("\n").slice(0, 48)) {
@@ -220,6 +231,98 @@ export function collectSteamCmdDiagnostics(launch: SteamCmdLaunch): string[] {
   return lines;
 }
 
+function readElfInterpreter(elfPath: string): string | null {
+  for (const readelf of ["/usr/bin/readelf", "/bin/readelf"]) {
+    if (!fs.existsSync(readelf)) {
+      continue;
+    }
+    try {
+      const out = execFileSync(readelf, ["-l", elfPath], {
+        encoding: "utf8",
+        maxBuffer: 512_000,
+      });
+      const m = /Requesting program interpreter:\s*([^\]\n]+)/.exec(out);
+      const s = m?.[1]?.trim();
+      return s && s.length > 0 ? s : null;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function isRootProcess(): boolean {
+  try {
+    return typeof process.getuid === "function" && process.getuid() === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Valve's steamcmd.sh runs linux32/steamcmd (32-bit). If PT_INTERP (e.g. /lib/ld-linux.so.2)
+ * is missing, the shell reports: "cannot execute: required file not found" (often mistaken for bash).
+ */
+export function ensureLinuxSteamCmdLoader(steamcmdDir: string): void {
+  if (process.platform !== "linux") {
+    return;
+  }
+  if (process.arch !== "x64") {
+    return;
+  }
+
+  const linux32 = path.join(steamcmdDir, "linux32", "steamcmd");
+  if (!fs.existsSync(linux32)) {
+    return;
+  }
+
+  const interp = readElfInterpreter(linux32);
+  if (!interp) {
+    console.error(
+      "[steamline] could not read ELF interpreter for linux32/steamcmd (install binutils for readelf)"
+    );
+    return;
+  }
+
+  if (fs.existsSync(interp)) {
+    return;
+  }
+
+  console.error(
+    `[steamline] SteamCMD 32-bit binary needs "${interp}" — running dependency install…`
+  );
+  tryInstallLinuxDepsForSteamline();
+
+  if (fs.existsSync(interp)) {
+    return;
+  }
+
+  const alts = [
+    "/lib/i386-linux-gnu/ld-linux.so.2",
+    "/lib32/ld-linux.so.2",
+  ];
+  const found = alts.find((p) => fs.existsSync(p));
+  if (found && isRootProcess()) {
+    try {
+      fs.mkdirSync(path.dirname(interp), { recursive: true });
+      if (!fs.existsSync(interp)) {
+        fs.symlinkSync(found, interp);
+        console.error(`[steamline] symlinked ELF interpreter ${interp} -> ${found}`);
+      }
+    } catch (e) {
+      console.error("[steamline] ELF interpreter symlink failed:", e);
+    }
+  }
+
+  if (!fs.existsSync(interp)) {
+    throw new Error(
+      `SteamCMD cannot run: the 32-bit loader "${interp}" is missing. ` +
+        `The script error "cannot execute: required file not found" refers to this file, not bash. ` +
+        `As root: dpkg --add-architecture i386 2>/dev/null; apt-get update && apt-get install -y libc6-i386`
+    );
+  }
+}
+
 /**
  * Resolve SteamCMD binary — custom path, cache, or download Valve build.
  */
@@ -233,10 +336,17 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
     if (!fs.existsSync(p)) {
       throw new Error(`STEAMLINE_STEAMCMD_PATH not found: ${p}`);
     }
+    console.error(
+      `[steamline] Using SteamCMD from STEAMLINE_STEAMCMD_PATH: ${p}`
+    );
+    const steamcmdDir = path.dirname(p);
+    if (process.platform === "linux") {
+      ensureLinuxSteamCmdLoader(steamcmdDir);
+    }
     return {
       command: p,
       leadArgs: [],
-      steamcmdDir: path.dirname(p),
+      steamcmdDir,
     };
   }
 
@@ -245,7 +355,14 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
   if (fs.existsSync(marker)) {
     const dir = fs.readFileSync(marker, "utf8").trim();
     if (fs.existsSync(dir)) {
-      return resolveLaunchFromDir(dir);
+      console.error(
+        `[steamline] Using cached SteamCMD at ${dir} (one copy per host; each server has its own game install directory).`
+      );
+      const launch = resolveLaunchFromDir(dir);
+      if (process.platform === "linux") {
+        ensureLinuxSteamCmdLoader(launch.steamcmdDir);
+      }
+      return launch;
     }
   }
 
@@ -269,5 +386,8 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
   extractLinux(tgz, outDir);
   const launch = resolveLaunchFromDir(outDir);
   fs.writeFileSync(marker, outDir, "utf8");
+  if (process.platform === "linux") {
+    ensureLinuxSteamCmdLoader(launch.steamcmdDir);
+  }
   return launch;
 }

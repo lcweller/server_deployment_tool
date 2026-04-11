@@ -32,6 +32,7 @@ export async function GET(_request: Request, ctx: RouteCtx) {
       hostName: hosts.name,
       provisionMessage: serverInstances.provisionMessage,
       lastError: serverInstances.lastError,
+      allocatedPorts: serverInstances.allocatedPorts,
     })
     .from(serverInstances)
     .leftJoin(

@@ -27,6 +27,7 @@ export async function GET(request: Request) {
       updatedAt: serverInstances.updatedAt,
       provisionMessage: serverInstances.provisionMessage,
       lastError: serverInstances.lastError,
+      allocatedPorts: serverInstances.allocatedPorts,
     })
     .from(serverInstances)
     .leftJoin(

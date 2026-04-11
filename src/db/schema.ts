@@ -1,3 +1,4 @@
+import type { AllocatedPorts } from "@/lib/allocated-ports";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { sql } from "drizzle-orm";
 import {
@@ -133,6 +134,8 @@ export const serverInstances = pgTable("server_instances", {
   status: text("status").notNull().default("draft"),
   provisionMessage: text("provision_message"),
   lastError: text("last_error"),
+  /** Game / query / optional RCON — allocated per host to avoid collisions; agent may refine after bind probe. */
+  allocatedPorts: jsonb("allocated_ports").$type<AllocatedPorts | null>(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

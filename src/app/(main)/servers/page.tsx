@@ -18,6 +18,7 @@ import {
 import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 import { Cpu, Gamepad2, Server } from "lucide-react";
 
@@ -46,6 +47,7 @@ export default async function ServersPage({
         hostName: hosts.name,
         provisionMessage: serverInstances.provisionMessage,
         lastError: serverInstances.lastError,
+        allocatedPorts: serverInstances.allocatedPorts,
       })
       .from(serverInstances)
       .leftJoin(
@@ -83,7 +85,7 @@ export default async function ServersPage({
       <DashboardPoller intervalMs={8000} />
       <PageHeader
         title="Servers"
-        description="Deploy game servers from the catalog to your enrolled hosts. The agent installs SteamCMD when needed and provisions each instance."
+        description="Deploy from the catalog to an enrolled host: we pick non-conflicting game/query ports per machine, verify them on the host when possible, and show what’s left for you (router, firewall, public IP) under each server."
       />
       <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
         <section className="grid gap-3 sm:grid-cols-3">
@@ -160,7 +162,7 @@ export default async function ServersPage({
                 {instanceRows.length}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                Queued → installing → running
+                Queued → installing → install complete (or deployed &amp; running)
               </p>
             </CardContent>
           </Card>
@@ -239,7 +241,15 @@ export default async function ServersPage({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <CardTitle className="text-base">{row.name}</CardTitle>
-                            <Badge variant="secondary">{row.status}</Badge>
+                            <Badge
+                              variant="secondary"
+                              title={`API status: ${row.status}`}
+                            >
+                              {instanceDashboardStatusLabel(
+                                row.status,
+                                row.provisionMessage
+                              )}
+                            </Badge>
                           </div>
                         </div>
                         <DeleteInstanceButton
@@ -266,6 +276,7 @@ export default async function ServersPage({
                           updatedAt: row.updatedAt.toISOString(),
                           catalogName: row.catalogName,
                           hostName: row.hostName,
+                          allocatedPorts: row.allocatedPorts,
                         }}
                       />
                       <InstanceLogsPanel instanceId={row.id} />

@@ -1,5 +1,5 @@
 /**
- * Best-effort install of packages Steamline needs on minimal Linux (bash, tar, 32-bit libs for Valve SteamCMD).
+ * Best-effort install of packages Steamline needs on minimal Linux (bash, tar, 32-bit loader + libs for Valve SteamCMD).
  * Runs only when root (Debian/Ubuntu / Alpine apk). Otherwise logs a one-line hint.
  */
 import { execFileSync } from "node:child_process";
@@ -38,6 +38,19 @@ function ensureI386IfDebian(): void {
   }
 }
 
+function tryAptInstallOne(pkg: string, quiet: boolean): boolean {
+  try {
+    if (quiet) {
+      runApt(["install", "-y", "-qq", pkg]);
+    } else {
+      runApt(["install", "-y", pkg]);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Idempotent — safe to call before every SteamCMD run (no-ops quickly if already satisfied).
  */
@@ -55,13 +68,13 @@ export function tryInstallLinuxDepsForSteamline(): void {
   if (fs.existsSync(apt)) {
     if (!isRoot()) {
       console.error(
-        "[steamline] Not running as root — skipping automatic apt. Use a root install (see install-agent.sh with sudo), or install bash, tar, and lib32gcc-s1 (i386) yourself."
+        "[steamline] Not running as root — skipping automatic apt. Use sudo for the install script, or install libc6-i386 so /lib/ld-linux.so.2 exists for 32-bit SteamCMD."
       );
       return;
     }
     try {
       console.error(
-        "[steamline] Ensuring OS packages for SteamCMD (apt — bash, tar, i386 libs)…"
+        "[steamline] Ensuring OS packages for SteamCMD (apt — libc6-i386 is installed in its own step)…"
       );
       runApt(["update", "-qq"]);
       runApt([
@@ -74,32 +87,24 @@ export function tryInstallLinuxDepsForSteamline(): void {
         "tar",
         "gzip",
         "libc6",
+        "binutils",
       ]);
       ensureI386IfDebian();
       runApt(["update", "-qq"]);
-      try {
-        runApt([
-          "install",
-          "-y",
-          "-qq",
-          "lib32gcc-s1",
-          "libc6-i386",
-          "lib32stdc++6",
-        ]);
-      } catch {
-        try {
-          runApt(["install", "-y", "-qq", "lib32gcc1", "libc6-i386"]);
-        } catch {
-          console.error(
-            "[steamline] Could not install 32-bit SteamCMD deps (lib32gcc / libc6-i386) — SteamCMD may still fail on very minimal images."
-          );
-        }
+
+      // Critical: 32-bit dynamic linker for Valve linux32/steamcmd — separate from lib32gcc so one failure cannot skip this.
+      console.error("[steamline] apt: installing libc6-i386 (32-bit ELF loader for SteamCMD)…");
+      if (!tryAptInstallOne("libc6-i386", false)) {
+        console.error(
+          "[steamline] libc6-i386 failed — trying multiarch libc6:i386 …"
+        );
+        tryAptInstallOne("libc6:i386", false);
       }
-      try {
-        runApt(["install", "-y", "-qq", "lib32z1"]);
-      } catch {
-        /* optional zlib for some titles */
+
+      for (const pkg of ["lib32gcc-s1", "lib32stdc++6", "lib32z1"]) {
+        tryAptInstallOne(pkg, true);
       }
+      tryAptInstallOne("lib32gcc1", true);
     } catch (e) {
       console.error("[steamline] apt auto-install failed (non-fatal):", e);
     }

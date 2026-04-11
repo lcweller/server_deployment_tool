@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { DeploymentPlaybook } from "@/components/deployment-playbook";
+import type { AllocatedPorts } from "@/lib/allocated-ports";
+import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 
 type InstancePayload = {
@@ -13,6 +16,7 @@ type InstancePayload = {
   updatedAt: string;
   catalogName: string | null;
   hostName: string | null;
+  allocatedPorts?: AllocatedPorts | null;
 };
 
 type Props = {
@@ -47,11 +51,25 @@ function explain(
     };
   }
   if (status === "running") {
+    const deployed =
+      provisionMessage?.toLowerCase().includes("dedicated command started") ??
+      false;
+    if (deployed) {
+      return {
+        headline: "Deployed & running",
+        detail:
+          provisionMessage ||
+          "The agent finished installing Steam files and started your dedicated server command.",
+        pct: 100,
+        pulse: false,
+        barMode: "determinate",
+      };
+    }
     return {
-      headline: "Running",
+      headline: "Install complete",
       detail:
         provisionMessage ||
-        "The agent finished installing; your dedicated process may still be starting.",
+        "SteamCMD finished and game files are on disk. This is not a guarantee the multiplayer server is listening yet — configure STEAMLINE_AFTER_INSTALL_CMD on the host to start it, or start the server manually.",
       pct: 100,
       pulse: false,
       barMode: "determinate",
@@ -138,10 +156,12 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
         }
         const json = (await res.json()) as { instance?: InstancePayload };
         if (json.instance) {
+          const inst = json.instance as InstancePayload & {
+            updatedAt?: string;
+          };
           setData((prev) => ({
-            ...json.instance!,
-            updatedAt:
-              json.instance!.updatedAt ?? prev.updatedAt,
+            ...inst,
+            updatedAt: inst.updatedAt ?? prev.updatedAt,
           }));
         }
       } catch {
@@ -201,14 +221,29 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
         </div>
       )}
       <p className="text-[11px] text-muted-foreground">
-        Step signal:{" "}
-        <span className="font-mono text-foreground">{data.status}</span>
+        <span className="text-foreground">
+          {instanceDashboardStatusLabel(
+            data.status,
+            data.provisionMessage
+          )}
+        </span>
+        <span className="text-muted-foreground/80">
+          {" "}
+          (API:{" "}
+          <span className="font-mono text-foreground/90">{data.status}</span>)
+        </span>
         {" · "}
         Updated{" "}
         {new Date(data.updatedAt).toLocaleTimeString(undefined, {
           timeStyle: "medium",
         })}
       </p>
+      <DeploymentPlaybook
+        hostName={data.hostName}
+        status={data.status}
+        provisionMessage={data.provisionMessage}
+        allocatedPorts={data.allocatedPorts}
+      />
     </div>
   );
 }

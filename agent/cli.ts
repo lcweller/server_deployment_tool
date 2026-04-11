@@ -46,6 +46,9 @@ function getBearer(): string {
   return key;
 }
 
+/** Max queued instances to provision in one run-loop iteration (avoids starving sleep/reboot checks). */
+const MAX_PROVISIONS_PER_CYCLE = 32;
+
 async function enroll(baseUrl: string, token: string) {
   const url = `${baseUrl.replace(/\/$/, "")}/api/v1/agent/enroll`;
   const res = await fetch(url, {
@@ -195,21 +198,42 @@ async function maybeRemoveHost(baseUrl: string) {
 
 async function processProvisionQueue(baseUrl: string) {
   const bearer = getBearer();
-  const list = await fetchInstanceList(baseUrl, bearer);
   const hostJson = await fetchHostSelf(baseUrl, bearer);
   if (hostJson?.host.status === "pending_removal") {
     return;
   }
-  const next = list.find((i) => i.status === "queued");
-  if (!next) {
-    return;
+
+  let doneInBatch = 0;
+  while (doneInBatch < MAX_PROVISIONS_PER_CYCLE) {
+    const list = await fetchInstanceList(baseUrl, bearer);
+    const next = list.find((i) => i.status === "queued");
+    if (!next) {
+      return;
+    }
+
+    if (doneInBatch > 0) {
+      console.error(
+        "[steamline] heartbeat between provisions (host stays online; SteamCMD cache is shared per instance install dir)…"
+      );
+      await heartbeatOnce(baseUrl);
+    }
+
+    console.error(`[steamline] provisioning "${next.name}" (${next.id})…`);
+    try {
+      await provisionInstance(baseUrl, bearer, next);
+      console.error(`[steamline] done ${next.id}`);
+    } catch (e) {
+      console.error("[steamline] provision error:", e);
+      return;
+    }
+    doneInBatch += 1;
   }
-  console.error(`[steamline] provisioning "${next.name}" (${next.id})…`);
-  try {
-    await provisionInstance(baseUrl, bearer, next);
-    console.error(`[steamline] done ${next.id}`);
-  } catch (e) {
-    console.error("[steamline] provision error:", e);
+
+  const list = await fetchInstanceList(baseUrl, bearer);
+  if (list.some((i) => i.status === "queued")) {
+    console.error(
+      `[steamline] provision batch limit (${MAX_PROVISIONS_PER_CYCLE}) reached — remaining queued servers continue next cycle.`
+    );
   }
 }
 

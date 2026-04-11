@@ -10,6 +10,7 @@ import {
   type SteamCmdLaunch,
 } from "./steamcmd-bootstrap";
 import { instanceInstallDir } from "./paths";
+import { formatPortEnv, resolvePortsWithLocalProbe } from "./port-probe";
 import { writeSteamlinePid } from "./pidfile";
 
 export type RemoteInstance = {
@@ -18,6 +19,13 @@ export type RemoteInstance = {
   status: string;
   steamAppId: string | null;
   slug: string | null;
+  /** From control plane — may be shifted after local bind probe */
+  allocatedPorts?: {
+    game?: number;
+    query?: number;
+    rcon?: number;
+  } | null;
+  template?: Record<string, unknown> | null;
 };
 
 const LOG_CHUNK = 450;
@@ -47,7 +55,7 @@ async function postStatus(
   apiBase: string,
   bearer: string,
   instanceId: string,
-  body: Record<string, string>
+  body: Record<string, unknown>
 ): Promise<void> {
   const url = `${base(apiBase)}/api/v1/agent/instances/${instanceId}/status`;
   const r = await postJson(url, {
@@ -171,10 +179,14 @@ export async function provisionInstance(
     await postLogLines(apiBase, bearer, inst.id, [
       "[steamline] STEAMLINE_PROVISION_STUB=1 — skipping real SteamCMD.",
     ]);
-    await postStatus(apiBase, bearer, inst.id, {
+    const stubBody: Record<string, unknown> = {
       status: "running",
       message: "Stub finished.",
-    });
+    };
+    if (inst.allocatedPorts && Object.keys(inst.allocatedPorts).length > 0) {
+      stubBody.allocatedPorts = inst.allocatedPorts;
+    }
+    await postStatus(apiBase, bearer, inst.id, stubBody);
     return;
   }
 
@@ -233,10 +245,41 @@ export async function provisionInstance(
     }
 
     if (code === 0) {
+      let resolvedPorts = inst.allocatedPorts ?? null;
+      let portsAdjusted = false;
+      try {
+        const probe = await resolvePortsWithLocalProbe(
+          inst.allocatedPorts ?? undefined,
+          inst.template ?? undefined
+        );
+        resolvedPorts = probe.ports;
+        portsAdjusted = probe.adjusted;
+        if (portsAdjusted) {
+          await postLogLines(apiBase, bearer, inst.id, [
+            `[steamline] Local bind probe chose different ports than the dashboard (another program may be using the original ports): game=${resolvedPorts.game ?? "—"} query=${resolvedPorts.query ?? "—"}`,
+          ]);
+        } else {
+          await postLogLines(apiBase, bearer, inst.id, [
+            `[steamline] Network ports verified free (TCP+UDP): game=${resolvedPorts.game ?? "—"} query=${resolvedPorts.query ?? "—"}`,
+          ]);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await postLogLines(apiBase, bearer, inst.id, [
+          `[steamline] Port probe could not run (${msg}). Using control-plane ports from the dashboard.`,
+        ]);
+        resolvedPorts = inst.allocatedPorts ?? {
+          game: 27_015,
+          query: 27_016,
+        };
+      }
+
       const startCmd = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim();
+      const portEnv = formatPortEnv(inst, dir, resolvedPorts ?? {});
       if (startCmd) {
         await postLogLines(apiBase, bearer, inst.id, [
           "[steamline] Starting dedicated process (STEAMLINE_AFTER_INSTALL_CMD)…",
+          "[steamline] Env: STEAMLINE_GAME_PORT, STEAMLINE_QUERY_PORT, STEAMLINE_INSTALL_DIR, STEAMLINE_PORTS_JSON (use these in your start command or wrapper script).",
         ]);
         try {
           const child = spawn(startCmd, [], {
@@ -244,7 +287,7 @@ export async function provisionInstance(
             shell: true,
             detached: true,
             stdio: "ignore",
-            env: { ...process.env },
+            env: portEnv,
           });
           child.unref();
           if (child.pid != null) {
@@ -260,16 +303,20 @@ export async function provisionInstance(
           ]);
         }
       }
-      await postStatus(apiBase, bearer, inst.id, {
+      const statusBody: Record<string, unknown> = {
         status: "running",
         message: startCmd
           ? `SteamCMD OK; dedicated command started. Install dir: ${dir}`
           : `SteamCMD finished (exit 0). Install dir: ${dir}`,
-      });
+      };
+      if (resolvedPorts && Object.keys(resolvedPorts).length > 0) {
+        statusBody.allocatedPorts = resolvedPorts;
+      }
+      await postStatus(apiBase, bearer, inst.id, statusBody);
     } else {
       const hint =
         code === 127
-          ? " Exit 127 is often: missing /bin/bash, missing 32-bit dynamic linker (install libc6-i386 on Ubuntu/Debian amd64), or SteamCMD not executable. See full logs above — run the agent as root once on minimal hosts, or set STEAMLINE_BASH_PATH."
+          ? ' If logs show steamcmd.sh + "cannot execute: required file not found" for linux32/steamcmd, the 32-bit ELF loader is missing (usually /lib/ld-linux.so.2). As root: apt-get install -y libc6-i386 (after dpkg --add-architecture i386). Not a bash problem.'
           : "";
       await postStatus(apiBase, bearer, inst.id, {
         status: "failed",

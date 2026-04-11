@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { db } from "@/db";
-import { hosts, serverInstances } from "@/db/schema";
+import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -77,8 +78,14 @@ export default async function HostDetailPage({
       updatedAt: serverInstances.updatedAt,
       provisionMessage: serverInstances.provisionMessage,
       lastError: serverInstances.lastError,
+      allocatedPorts: serverInstances.allocatedPorts,
+      catalogName: catalogEntries.name,
     })
     .from(serverInstances)
+    .leftJoin(
+      catalogEntries,
+      eq(serverInstances.catalogEntryId, catalogEntries.id)
+    )
     .where(eq(serverInstances.hostId, hostId))
     .orderBy(desc(serverInstances.updatedAt))
     .limit(10);
@@ -206,9 +213,11 @@ export default async function HostDetailPage({
               <CardTitle className="text-base">Game servers</CardTitle>
               <CardDescription>
                 Instances on this host ({instanceCount} total). The agent moves
-                them <span className="text-foreground">queued</span> →{" "}
-                <span className="text-foreground">installing</span> →{" "}
-                <span className="text-foreground">running</span>.
+                them <span className="text-foreground">Queued</span> →{" "}
+                <span className="text-foreground">Installing</span> →{" "}
+                <span className="text-foreground">Install complete</span> (or{" "}
+                <span className="text-foreground">Deployed &amp; running</span>{" "}
+                if a start command was configured on the host).
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -231,7 +240,15 @@ export default async function HostDetailPage({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="truncate font-medium">{inst.name}</span>
-                            <Badge variant="outline">{inst.status}</Badge>
+                            <Badge
+                              variant="outline"
+                              title={`API status: ${inst.status}`}
+                            >
+                              {instanceDashboardStatusLabel(
+                                inst.status,
+                                inst.provisionMessage
+                              )}
+                            </Badge>
                           </div>
                         </div>
                         <DeleteInstanceButton
@@ -251,8 +268,9 @@ export default async function HostDetailPage({
                             provisionMessage: inst.provisionMessage,
                             lastError: inst.lastError,
                             updatedAt: inst.updatedAt.toISOString(),
-                            catalogName: null,
-                            hostName: null,
+                            catalogName: inst.catalogName,
+                            hostName: host.name,
+                            allocatedPorts: inst.allocatedPorts,
                           }}
                         />
                         <InstanceLogsPanel instanceId={inst.id} />

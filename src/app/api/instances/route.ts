@@ -5,6 +5,11 @@ import { z } from "zod";
 import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import {
+  allocateNextPortSet,
+  collectUsedPorts,
+  parseDefaultPortsFromTemplate,
+} from "@/lib/port-allocation";
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -33,6 +38,7 @@ export async function GET() {
       hostName: hosts.name,
       provisionMessage: serverInstances.provisionMessage,
       lastError: serverInstances.lastError,
+      allocatedPorts: serverInstances.allocatedPorts,
     })
     .from(serverInstances)
     .leftJoin(catalogEntries, eq(serverInstances.catalogEntryId, catalogEntries.id))
@@ -83,14 +89,29 @@ export async function POST(request: Request) {
   }
 
   const catRows = await db
-    .select({ id: catalogEntries.id })
+    .select({
+      id: catalogEntries.id,
+      template: catalogEntries.template,
+    })
     .from(catalogEntries)
     .where(eq(catalogEntries.id, parsed.data.catalogEntryId))
     .limit(1);
 
-  if (!catRows[0]) {
+  const catalog = catRows[0];
+  if (!catalog) {
     return NextResponse.json({ error: "Catalog entry not found" }, { status: 404 });
   }
+
+  const siblingRows = await db
+    .select({ allocatedPorts: serverInstances.allocatedPorts })
+    .from(serverInstances)
+    .where(eq(serverInstances.hostId, parsed.data.hostId));
+
+  const used = collectUsedPorts(siblingRows);
+  const defaults = parseDefaultPortsFromTemplate(
+    catalog.template as Record<string, unknown>
+  );
+  const allocatedPorts = allocateNextPortSet(used, defaults);
 
   /**
    * `queued` = waiting for the host agent to provision (installing → running).
@@ -103,6 +124,7 @@ export async function POST(request: Request) {
       catalogEntryId: parsed.data.catalogEntryId,
       name: parsed.data.name,
       status: "queued",
+      allocatedPorts,
     })
     .returning({
       id: serverInstances.id,
@@ -112,6 +134,7 @@ export async function POST(request: Request) {
       catalogEntryId: serverInstances.catalogEntryId,
       createdAt: serverInstances.createdAt,
       updatedAt: serverInstances.updatedAt,
+      allocatedPorts: serverInstances.allocatedPorts,
     });
 
   return NextResponse.json({ instance });

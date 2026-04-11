@@ -6,18 +6,27 @@ import { db } from "@/db";
 import { serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
 
+const portsShape = z.object({
+  game: z.number().int().min(1).max(65535).optional(),
+  query: z.number().int().min(1).max(65535).optional(),
+  rcon: z.number().int().min(1).max(65535).optional(),
+});
+
 const bodySchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("installing"),
     message: z.string().max(2000).optional(),
+    allocatedPorts: portsShape.optional(),
   }),
   z.object({
     status: z.literal("running"),
     message: z.string().max(2000).optional(),
+    allocatedPorts: portsShape.optional(),
   }),
   z.object({
     status: z.literal("failed"),
     message: z.string().min(1).max(8000),
+    allocatedPorts: portsShape.optional(),
   }),
 ]);
 
@@ -79,6 +88,11 @@ export async function POST(request: Request, ctx: RouteCtx) {
   }
 
   const now = new Date();
+  const portsPatch =
+    parsed.data.allocatedPorts != null
+      ? { allocatedPorts: parsed.data.allocatedPorts }
+      : {};
+
   if (next === "failed") {
     await db
       .update(serverInstances)
@@ -87,6 +101,7 @@ export async function POST(request: Request, ctx: RouteCtx) {
         lastError: parsed.data.message,
         provisionMessage: null,
         updatedAt: now,
+        ...portsPatch,
       })
       .where(
         and(
@@ -102,6 +117,7 @@ export async function POST(request: Request, ctx: RouteCtx) {
         lastError: null,
         provisionMessage: parsed.data.message ?? null,
         updatedAt: now,
+        ...portsPatch,
       })
       .where(
         and(
@@ -118,6 +134,7 @@ export async function POST(request: Request, ctx: RouteCtx) {
         provisionMessage:
           parsed.data.message ?? "Provision completed successfully.",
         updatedAt: now,
+        ...portsPatch,
       })
       .where(
         and(

@@ -88,6 +88,7 @@ export async function ingestSteamCatalog(options?: { maxRows?: number }) {
         template: {
           source: "steam-ingest",
           loginMode: "unknown",
+          defaultPorts: { game: 27_015, query: 27_016, stride: 2 },
         },
         popularityScore,
       });
