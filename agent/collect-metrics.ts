@@ -31,6 +31,8 @@ export type HeartbeatMetricsPayload = {
   diskUsedBytes: number;
   diskFreeBytes: number;
   diskUsedPercent: number;
+  /** Best-effort WAN IPv4 from the agent (for connect hints in the dashboard). */
+  publicIpv4?: string | null;
 };
 
 function diskForPath(mountPath: string): {

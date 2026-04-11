@@ -7,6 +7,7 @@ import * as path from "node:path";
 
 import type { RemoteInstance } from "./provision";
 import { instanceInstallDir } from "./paths";
+import { removeWindowsFirewallRulesForInstance } from "./windows-firewall";
 
 function base(apiBase: string) {
   return apiBase.replace(/\/$/, "");
@@ -76,6 +77,10 @@ export async function cleanupPendingDelete(
   const dir = instanceInstallDir(inst.id);
   try {
     if (fs.existsSync(dir)) {
+      const fwLogs = removeWindowsFirewallRulesForInstance(dir);
+      for (const line of fwLogs) {
+        console.error(`[steamline] ${line}`);
+      }
       fs.rmSync(dir, { recursive: true, force: true });
     }
   } catch (e) {

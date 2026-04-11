@@ -38,6 +38,8 @@ async function main() {
           "Placeholder template for classic SRCDS-style titles; verify App ID and launch flags before production.",
         loginMode: "anonymous",
         defaultPorts: { game: 27015, query: 27016, stride: 2 },
+        afterInstallCmd:
+          'node -e "console.log(\\"[steamline] catalog hook\\", process.env.STEAMLINE_GAME_PORT); process.exit(0);"',
       },
       popularityScore: 100,
     },
@@ -50,6 +52,8 @@ async function main() {
           "Example row for popularity sorting UI; confirm SteamCMD login mode for this title.",
         loginMode: "unknown",
         defaultPorts: { game: 16261, query: 16262, stride: 2 },
+        afterInstallCmd:
+          'node -e "console.log(\\"[steamline] catalog hook\\", process.env.STEAMLINE_GAME_PORT); process.exit(0);"',
       },
       popularityScore: 85,
     },

@@ -45,6 +45,7 @@ export default async function ServersPage({
         updatedAt: serverInstances.updatedAt,
         catalogName: catalogEntries.name,
         hostName: hosts.name,
+        hostMetrics: hosts.hostMetrics,
         provisionMessage: serverInstances.provisionMessage,
         lastError: serverInstances.lastError,
         allocatedPorts: serverInstances.allocatedPorts,
@@ -276,6 +277,7 @@ export default async function ServersPage({
                           updatedAt: row.updatedAt.toISOString(),
                           catalogName: row.catalogName,
                           hostName: row.hostName,
+                          hostMetrics: row.hostMetrics,
                           allocatedPorts: row.allocatedPorts,
                         }}
                       />

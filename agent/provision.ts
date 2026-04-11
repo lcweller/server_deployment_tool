@@ -12,6 +12,7 @@ import {
 import { instanceInstallDir } from "./paths";
 import { formatPortEnv, resolvePortsWithLocalProbe } from "./port-probe";
 import { writeSteamlinePid } from "./pidfile";
+import { applyWindowsFirewallForPorts } from "./windows-firewall";
 
 export type RemoteInstance = {
   id: string;
@@ -101,6 +102,27 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Replace `${VAR}` using process env (after port env is merged). */
+function expandEnvPlaceholders(cmd: string, env: NodeJS.ProcessEnv): string {
+  return cmd.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, key: string) => {
+    const v = env[key];
+    return v !== undefined && v !== "" ? String(v) : "";
+  });
+}
+
+/** Host env wins; else catalog `template.afterInstallCmd`. */
+function resolveStartCommand(inst: RemoteInstance): string | undefined {
+  const envCmd = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim();
+  if (envCmd) {
+    return envCmd;
+  }
+  const raw = inst.template?.afterInstallCmd;
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim();
+  }
+  return undefined;
+}
+
 function instanceDataDir(instanceId: string): string {
   const root = instanceInstallDir(instanceId);
   fs.mkdirSync(root, { recursive: true });
@@ -171,7 +193,7 @@ export async function provisionInstance(
     status: "installing",
     message: stub
       ? "Stub provision (STEAMLINE_PROVISION_STUB=1)…"
-      : "Downloading/running SteamCMD (anonymous)…",
+      : "Provisioning game files (SteamCMD is shared on this host — only the game update runs each time)…",
   });
 
   if (stub) {
@@ -201,7 +223,14 @@ export async function provisionInstance(
   const dir = instanceDataDir(inst.id);
 
   try {
-    const launch: SteamCmdLaunch = await ensureSteamCmd();
+    const ensured = await ensureSteamCmd();
+    const launch: SteamCmdLaunch = ensured.launch;
+
+    await postLogLines(apiBase, bearer, inst.id, [
+      ensured.cacheHit
+        ? "[steamline] SteamCMD is already on this machine — not re-downloading the SteamCMD archive. Running app_update for this instance only."
+        : "[steamline] First-time SteamCMD setup on this machine — downloaded and extracted Valve SteamCMD once; later servers reuse it.",
+    ]);
 
     await postLogLines(
       apiBase,
@@ -274,12 +303,26 @@ export async function provisionInstance(
         };
       }
 
-      const startCmd = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim();
       const portEnv = formatPortEnv(inst, dir, resolvedPorts ?? {});
-      if (startCmd) {
+      const fwLines = applyWindowsFirewallForPorts(inst.id, dir, resolvedPorts ?? {});
+      if (fwLines.length > 0) {
         await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] Starting dedicated process (STEAMLINE_AFTER_INSTALL_CMD)…",
-          "[steamline] Env: STEAMLINE_GAME_PORT, STEAMLINE_QUERY_PORT, STEAMLINE_INSTALL_DIR, STEAMLINE_PORTS_JSON (use these in your start command or wrapper script).",
+          "[steamline] Windows Firewall (best effort — agent may need Administrator):",
+          ...fwLines,
+        ]);
+      }
+
+      const startCmdRaw = resolveStartCommand(inst);
+      const startCmd = startCmdRaw
+        ? expandEnvPlaceholders(startCmdRaw, portEnv)
+        : undefined;
+      if (startCmd) {
+        const src = process.env.STEAMLINE_AFTER_INSTALL_CMD?.trim()
+          ? "STEAMLINE_AFTER_INSTALL_CMD"
+          : "catalog template.afterInstallCmd";
+        await postLogLines(apiBase, bearer, inst.id, [
+          `[steamline] Starting dedicated process (${src})…`,
+          "[steamline] Environment includes STEAMLINE_GAME_PORT, STEAMLINE_QUERY_PORT, STEAMLINE_INSTALL_DIR, STEAMLINE_PORTS_JSON (and %STEAMLINE_*% expands on Windows cmd).",
         ]);
         try {
           const child = spawn(startCmd, [], {
@@ -299,15 +342,19 @@ export async function provisionInstance(
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await postLogLines(apiBase, bearer, inst.id, [
-            `[steamline] STEAMLINE_AFTER_INSTALL_CMD failed: ${msg}`,
+            `[steamline] Start command failed: ${msg}`,
           ]);
         }
+      } else {
+        await postLogLines(apiBase, bearer, inst.id, [
+          "[steamline] No start command: set STEAMLINE_AFTER_INSTALL_CMD on the host or add template.afterInstallCmd in the catalog for this game.",
+        ]);
       }
       const statusBody: Record<string, unknown> = {
         status: "running",
         message: startCmd
           ? `SteamCMD OK; dedicated command started. Install dir: ${dir}`
-          : `SteamCMD finished (exit 0). Install dir: ${dir}`,
+          : `SteamCMD finished (exit 0). No dedicated start command configured. Install dir: ${dir}`,
       };
       if (resolvedPorts && Object.keys(resolvedPorts).length > 0) {
         statusBody.allocatedPorts = resolvedPorts;

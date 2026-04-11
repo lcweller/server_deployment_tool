@@ -56,6 +56,12 @@ export type SteamCmdLaunch = {
   steamcmdDir: string;
 };
 
+export type SteamCmdEnsureResult = {
+  launch: SteamCmdLaunch;
+  /** True when no new download/extract ran (custom path or existing cache). */
+  cacheHit: boolean;
+};
+
 async function download(url: string, dest: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok) {
@@ -326,7 +332,7 @@ export function ensureLinuxSteamCmdLoader(steamcmdDir: string): void {
 /**
  * Resolve SteamCMD binary — custom path, cache, or download Valve build.
  */
-export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
+export async function ensureSteamCmd(): Promise<SteamCmdEnsureResult> {
   if (process.platform === "linux") {
     tryInstallLinuxDepsForSteamline();
   }
@@ -344,9 +350,12 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
       ensureLinuxSteamCmdLoader(steamcmdDir);
     }
     return {
-      command: p,
-      leadArgs: [],
-      steamcmdDir,
+      launch: {
+        command: p,
+        leadArgs: [],
+        steamcmdDir,
+      },
+      cacheHit: true,
     };
   }
 
@@ -362,8 +371,11 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
       if (process.platform === "linux") {
         ensureLinuxSteamCmdLoader(launch.steamcmdDir);
       }
-      return launch;
+      return { launch, cacheHit: true };
     }
+    console.error(
+      "[steamline] SteamCMD cache marker exists but extract dir is missing — downloading a fresh copy."
+    );
   }
 
   fs.mkdirSync(root, { recursive: true });
@@ -371,17 +383,17 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
   if (process.platform === "win32") {
     const zip = path.join(root, "steamcmd.zip");
     const outDir = path.join(root, "extract");
-    console.error("[steamline] downloading SteamCMD (Windows)…");
+    console.error("[steamline] downloading SteamCMD (Windows) — first-time or cache rebuild…");
     await download(WIN_URL, zip);
     extractWin(zip, outDir);
     const launch = resolveLaunchFromDir(outDir);
     fs.writeFileSync(marker, outDir, "utf8");
-    return launch;
+    return { launch, cacheHit: false };
   }
 
   const tgz = path.join(root, "steamcmd_linux.tar.gz");
   const outDir = path.join(root, "extract");
-  console.error("[steamline] downloading SteamCMD (Linux)…");
+  console.error("[steamline] downloading SteamCMD (Linux) — first-time or cache rebuild…");
   await download(LINUX_URL, tgz);
   extractLinux(tgz, outDir);
   const launch = resolveLaunchFromDir(outDir);
@@ -389,5 +401,5 @@ export async function ensureSteamCmd(): Promise<SteamCmdLaunch> {
   if (process.platform === "linux") {
     ensureLinuxSteamCmdLoader(launch.steamcmdDir);
   }
-  return launch;
+  return { launch, cacheHit: false };
 }

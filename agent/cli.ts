@@ -18,6 +18,7 @@ import {
   runHostUninstall,
 } from "./cleanup";
 import { collectHeartbeatMetrics } from "./collect-metrics";
+import { fetchPublicIpv4 } from "./public-ip";
 import { loadSteamlineApiKeyEarly } from "./load-api-key";
 import { provisionInstance, type RemoteInstance } from "./provision";
 import { performDashboardReboot } from "./reboot";
@@ -101,6 +102,16 @@ async function heartbeatOnce(
     metrics = collectHeartbeatMetrics();
   } catch {
     metrics = undefined;
+  }
+  if (metrics) {
+    try {
+      const pub = await fetchPublicIpv4();
+      if (pub) {
+        metrics = { ...metrics, publicIpv4: pub };
+      }
+    } catch {
+      /* ignore */
+    }
   }
   const res = await fetch(url, {
     method: "POST",

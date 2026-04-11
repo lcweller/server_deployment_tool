@@ -24,6 +24,8 @@ export type HostMetricsSnapshot = {
   diskUsedBytes?: number;
   diskFreeBytes?: number;
   diskUsedPercent?: number;
+  /** Best-effort public IPv4 reported by the agent (WAN). */
+  publicIpv4?: string | null;
   /** Set by the control plane when persisting */
   receivedAt?: string;
 };

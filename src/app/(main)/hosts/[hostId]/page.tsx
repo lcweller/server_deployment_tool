@@ -270,6 +270,7 @@ export default async function HostDetailPage({
                             updatedAt: inst.updatedAt.toISOString(),
                             catalogName: inst.catalogName,
                             hostName: host.name,
+                            hostMetrics: host.hostMetrics,
                             allocatedPorts: inst.allocatedPorts,
                           }}
                         />

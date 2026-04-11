@@ -81,6 +81,11 @@ export function HostResourcesPanel({ metrics, lastSeenAt }: Props) {
                 {metrics.cpuModel}
               </span>
             ) : null}
+            {metrics.publicIpv4 ? (
+              <span className="mt-1 block font-mono text-[11px] text-foreground/90">
+                Public IPv4: {metrics.publicIpv4}
+              </span>
+            ) : null}
           </p>
         </div>
         {live ? (

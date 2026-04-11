@@ -28,6 +28,7 @@ const metricsSchema = z
     diskUsedBytes: z.number().nonnegative().optional(),
     diskFreeBytes: z.number().nonnegative().optional(),
     diskUsedPercent: z.number().min(0).max(100).optional(),
+    publicIpv4: z.string().max(45).nullable().optional(),
   })
   .strict();
 

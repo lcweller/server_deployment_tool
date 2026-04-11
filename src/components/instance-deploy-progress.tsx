@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { DeploymentPlaybook } from "@/components/deployment-playbook";
 import type { AllocatedPorts } from "@/lib/allocated-ports";
+import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ type InstancePayload = {
   catalogName: string | null;
   hostName: string | null;
   allocatedPorts?: AllocatedPorts | null;
+  hostMetrics?: HostMetricsSnapshot | null;
 };
 
 type Props = {
@@ -69,7 +71,7 @@ function explain(
       headline: "Install complete",
       detail:
         provisionMessage ||
-        "SteamCMD finished and game files are on disk. This is not a guarantee the multiplayer server is listening yet — configure STEAMLINE_AFTER_INSTALL_CMD on the host to start it, or start the server manually.",
+        "SteamCMD finished and game files are on disk. No dedicated process was started — set STEAMLINE_AFTER_INSTALL_CMD on the host or add catalog template.afterInstallCmd for this game.",
       pct: 100,
       pulse: false,
       barMode: "determinate",
@@ -240,6 +242,7 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
       </p>
       <DeploymentPlaybook
         hostName={data.hostName}
+        hostMetrics={data.hostMetrics}
         status={data.status}
         provisionMessage={data.provisionMessage}
         allocatedPorts={data.allocatedPorts}
