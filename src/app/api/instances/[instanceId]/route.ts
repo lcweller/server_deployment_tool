@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
 import { analyzeRecentLogLines } from "@/lib/log-insights";
+import { isHostHeartbeatFresh } from "@/lib/host-presence";
 
 type RouteCtx = { params: Promise<{ instanceId: string }> };
 
@@ -41,6 +42,7 @@ export async function GET(_request: Request, ctx: RouteCtx) {
       lastError: serverInstances.lastError,
       allocatedPorts: serverInstances.allocatedPorts,
       hostMetrics: hosts.hostMetrics,
+      hostLastSeenAt: hosts.lastSeenAt,
     })
     .from(serverInstances)
     .leftJoin(
@@ -61,6 +63,9 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const { hostLastSeenAt, ...instanceRow } = row;
+  const hostReachable = isHostHeartbeatFresh(hostLastSeenAt);
+
   const logRows = await db
     .select({ line: instanceLogLines.line })
     .from(instanceLogLines)
@@ -74,7 +79,8 @@ export async function GET(_request: Request, ctx: RouteCtx) {
 
   return NextResponse.json({
     instance: {
-      ...row,
+      ...instanceRow,
+      hostReachable,
       logInsights: logInsights ?? undefined,
     },
   });
@@ -129,6 +135,23 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
   if (!inst.hostId) {
     return NextResponse.json(
       { error: "Assign this server to a host before changing power state." },
+      { status: 409 }
+    );
+  }
+
+  const [hostRow] = await db
+    .select({ lastSeenAt: hosts.lastSeenAt })
+    .from(hosts)
+    .where(eq(hosts.id, inst.hostId))
+    .limit(1);
+
+  if (!isHostHeartbeatFresh(hostRow?.lastSeenAt)) {
+    return NextResponse.json(
+      {
+        error:
+          "This host has not sent a recent heartbeat (it may be powered off or unreachable). Start the machine or fix agent connectivity, then try again.",
+        code: "HOST_OFFLINE",
+      },
       { status: 409 }
     );
   }

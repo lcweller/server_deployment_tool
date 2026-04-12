@@ -25,6 +25,10 @@ import { buttonVariants } from "@/components/ui/button";
 import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import {
+  effectiveHostStatus,
+  isHostHeartbeatFresh,
+} from "@/lib/host-presence";
 import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +75,12 @@ export default async function HostDetailPage({
         eq(serverInstances.status, "pending_delete")
       )
     );
+
+  const displayHostStatus = effectiveHostStatus({
+    status: host.status,
+    lastSeenAt: host.lastSeenAt,
+  });
+  const hostReachable = isHostHeartbeatFresh(host.lastSeenAt);
 
   const recentInstances = await db
     .select({
@@ -152,7 +162,7 @@ export default async function HostDetailPage({
             <CardContent className="space-y-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">State</span>
-                <Badge variant="secondary">{host.status}</Badge>
+                <Badge variant="secondary">{displayHostStatus}</Badge>
               </div>
               {host.platformOs ? (
                 <div className="flex items-center justify-between gap-2">
@@ -265,6 +275,7 @@ export default async function HostDetailPage({
                           instanceId={inst.id}
                           instanceName={inst.name}
                           status={inst.status}
+                          hostReachable={hostReachable}
                           className="pb-2"
                         />
                         <InstanceDeployProgress
@@ -280,6 +291,7 @@ export default async function HostDetailPage({
                             hostName: host.name,
                             hostMetrics: host.hostMetrics,
                             allocatedPorts: inst.allocatedPorts,
+                            hostReachable,
                           }}
                         />
                         <InstanceLogsPanel instanceId={inst.id} />

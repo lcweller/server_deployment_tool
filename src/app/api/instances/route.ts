@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { isHostHeartbeatFresh } from "@/lib/host-presence";
 import {
   allocateNextPortSet,
   collectUsedPorts,
@@ -85,6 +86,17 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Host is not enrolled yet. Finish agent enrollment first." },
       { status: 400 }
+    );
+  }
+
+  if (!isHostHeartbeatFresh(host.lastSeenAt)) {
+    return NextResponse.json(
+      {
+        error:
+          "This host has not sent a recent heartbeat (it may be powered off or unreachable). Start the machine or fix agent connectivity before creating a server.",
+        code: "HOST_OFFLINE",
+      },
+      { status: 409 }
     );
   }
 

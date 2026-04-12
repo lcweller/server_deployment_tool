@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { isHostHeartbeatFresh } from "@/lib/host-presence";
 import { isProbeablePublicIpv4 } from "@/lib/connectivity/public-ipv4";
 import { probeTcpPort, type TcpProbeResult } from "@/lib/connectivity/tcp-probe";
 
@@ -31,6 +32,7 @@ export async function POST(_request: Request, ctx: RouteCtx) {
       status: serverInstances.status,
       allocatedPorts: serverInstances.allocatedPorts,
       hostMetrics: hosts.hostMetrics,
+      hostLastSeenAt: hosts.lastSeenAt,
     })
     .from(serverInstances)
     .innerJoin(hosts, eq(serverInstances.hostId, hosts.id))
@@ -52,6 +54,17 @@ export async function POST(_request: Request, ctx: RouteCtx) {
       {
         error:
           "Run this check when the server is running (or automatically restarting) on the host.",
+      },
+      { status: 409 }
+    );
+  }
+
+  if (!isHostHeartbeatFresh(row.hostLastSeenAt)) {
+    return NextResponse.json(
+      {
+        error:
+          "The host agent has not reported in recently, so the dashboard will not run a reachability check. Power the machine on or restore agent connectivity, then try again.",
+        code: "HOST_OFFLINE",
       },
       { status: 409 }
     );

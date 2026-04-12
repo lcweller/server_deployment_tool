@@ -1,5 +1,6 @@
 import { MetricsLoadingQuips } from "@/components/metrics-loading-quips";
 import { UsageBar } from "@/components/usage-bar";
+import { HOST_HEARTBEAT_MAX_AGE_MS } from "@/lib/host-presence";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { clampPct, formatBytes } from "@/lib/host-metrics";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,7 @@ type Props = {
 export function HostResourcesPanel({ metrics, lastSeenAt }: Props) {
   const live =
     lastSeenAt != null &&
-    Date.now() - lastSeenAt.getTime() < 2 * 60 * 1000;
+    Date.now() - lastSeenAt.getTime() < HOST_HEARTBEAT_MAX_AGE_MS;
 
   if (!metrics || (!metrics.memTotalBytes && !metrics.diskTotalBytes)) {
     return (

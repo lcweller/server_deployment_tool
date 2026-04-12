@@ -12,9 +12,14 @@ type Result = {
 
 type Props = {
   instanceId: string;
+  /** When false, the check is disabled (host has no recent agent heartbeat). */
+  hostReachable?: boolean;
 };
 
-export function ConnectivityCheckButton({ instanceId }: Props) {
+export function ConnectivityCheckButton({
+  instanceId,
+  hostReachable = true,
+}: Props) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,23 +59,37 @@ export function ConnectivityCheckButton({ instanceId }: Props) {
     }
   }
 
+  const blocked = !hostReachable;
+
   return (
     <div className="mt-3 border-t border-border/50 pt-3">
       <Button
         type="button"
         variant="secondary"
         size="sm"
-        disabled={busy}
+        disabled={busy || blocked}
+        title={
+          blocked
+            ? "Wait until the host agent sends a heartbeat again"
+            : undefined
+        }
         onClick={() => {
           void run();
         }}
       >
         {busy ? "Testing…" : "Test connection from the internet"}
       </Button>
-      <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
-        We try a short TCP check from Steamline to your host&apos;s public IPv4.
-        Many games use UDP as well — read the note below the result.
-      </p>
+      {blocked ? (
+        <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+          Unavailable while the host has no recent heartbeat (machine off or
+          agent unreachable).
+        </p>
+      ) : (
+        <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+          We try a short TCP check from Steamline to your host&apos;s public IPv4.
+          Many games use UDP as well — read the note below the result.
+        </p>
+      )}
       {error ? (
         <p className="mt-2 text-xs text-destructive" role="alert">
           {error}

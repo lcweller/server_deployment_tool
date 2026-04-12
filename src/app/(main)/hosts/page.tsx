@@ -14,6 +14,7 @@ import {
 import { db } from "@/db";
 import { hosts } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { effectiveHostStatus } from "@/lib/host-presence";
 import { cn } from "@/lib/utils";
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -76,7 +77,12 @@ export default async function HostsPage() {
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between gap-2">
                           <CardTitle className="text-base">{h.name}</CardTitle>
-                          <Badge variant="secondary">{h.status}</Badge>
+                          <Badge variant="secondary">
+                            {effectiveHostStatus({
+                              status: h.status,
+                              lastSeenAt: h.lastSeenAt,
+                            })}
+                          </Badge>
                         </div>
                         <CardDescription className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
                           <span className="truncate">{h.id}</span>

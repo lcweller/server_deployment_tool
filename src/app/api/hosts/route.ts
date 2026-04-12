@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { hosts } from "@/db/schema";
 import { generateSessionToken, hashSessionToken } from "@/lib/auth/session-token";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { effectiveHostStatus } from "@/lib/host-presence";
 
 const platformOsSchema = z.enum(["linux", "macos", "windows"]);
 
@@ -33,6 +34,10 @@ export async function GET() {
       ...rest
     }) => ({
       ...rest,
+      status: effectiveHostStatus({
+        status: rest.status,
+        lastSeenAt: rest.lastSeenAt,
+      }),
       awaitingEnrollment: rest.status === "pending",
     })
   );

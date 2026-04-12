@@ -19,6 +19,10 @@ import {
 import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import {
+  effectiveHostStatus,
+  isHostHeartbeatFresh,
+} from "@/lib/host-presence";
 import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 import { Cpu, Gamepad2, Server } from "lucide-react";
@@ -47,6 +51,7 @@ export default async function ServersPage({
         catalogName: catalogEntries.name,
         hostName: hosts.name,
         hostMetrics: hosts.hostMetrics,
+        hostLastSeenAt: hosts.lastSeenAt,
         provisionMessage: serverInstances.provisionMessage,
         lastError: serverInstances.lastError,
         allocatedPorts: serverInstances.allocatedPorts,
@@ -64,6 +69,7 @@ export default async function ServersPage({
         id: hosts.id,
         name: hosts.name,
         status: hosts.status,
+        lastSeenAt: hosts.lastSeenAt,
       })
       .from(hosts)
       .where(eq(hosts.userId, user.id))
@@ -80,7 +86,20 @@ export default async function ServersPage({
   ]);
 
   const enrolledHosts = hostRows.filter((h) => h.status !== "pending");
-  const canCreate = enrolledHosts.length > 0 && catalogRows.length > 0;
+  const reachableHosts = enrolledHosts.filter((h) =>
+    isHostHeartbeatFresh(h.lastSeenAt)
+  );
+  const canCreate = reachableHosts.length > 0 && catalogRows.length > 0;
+
+  const createFormHosts = hostRows.map((h) => ({
+    id: h.id,
+    name: h.name,
+    status: effectiveHostStatus({
+      status: h.status,
+      lastSeenAt: h.lastSeenAt,
+    }),
+    agentReachable: isHostHeartbeatFresh(h.lastSeenAt),
+  }));
 
   return (
     <>
@@ -104,14 +123,21 @@ export default async function ServersPage({
               <div>
                 <CardTitle className="text-sm font-medium">Hosts ready</CardTitle>
                 <CardDescription className="text-xs">
-                  Enrolled & online
+                  Agent heartbeat (last ~2 min)
                 </CardDescription>
               </div>
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-semibold tabular-nums">
-                {enrolledHosts.length}
+                {reachableHosts.length}
               </p>
+              {enrolledHosts.length > reachableHosts.length ? (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {enrolledHosts.length} enrolled —{" "}
+                  {enrolledHosts.length - reachableHosts.length} without a recent
+                  heartbeat
+                </p>
+              ) : null}
               <Link
                 href="/hosts"
                 className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
@@ -175,8 +201,9 @@ export default async function ServersPage({
             <CardHeader>
               <CardTitle className="text-base">Finish one-touch setup</CardTitle>
               <CardDescription className="text-sm leading-relaxed">
-                You need at least one{" "}
-                <strong className="text-foreground">enrolled host</strong> and one{" "}
+                You need at least one host with a{" "}
+                <strong className="text-foreground">recent agent heartbeat</strong>{" "}
+                (machine on, agent reaching the API) and one{" "}
                 <strong className="text-foreground">catalog title</strong>. After
                 installing the agent, the control plane seeds starter catalog
                 entries on deploy — refresh if you just updated. Then create a
@@ -212,7 +239,7 @@ export default async function ServersPage({
             </p>
           </div>
           <CreateInstanceForm
-            hosts={hostRows}
+            hosts={createFormHosts}
             catalog={catalogRows}
             defaultCatalogId={defaultCatalogId}
           />
@@ -271,6 +298,7 @@ export default async function ServersPage({
                         instanceId={row.id}
                         instanceName={row.name}
                         status={row.status}
+                        hostReachable={isHostHeartbeatFresh(row.hostLastSeenAt)}
                         className="pb-3"
                       />
                       <InstanceDeployProgress
@@ -286,6 +314,9 @@ export default async function ServersPage({
                           hostName: row.hostName,
                           hostMetrics: row.hostMetrics,
                           allocatedPorts: row.allocatedPorts,
+                          hostReachable: isHostHeartbeatFresh(
+                            row.hostLastSeenAt
+                          ),
                         }}
                       />
                       <InstanceLogsPanel instanceId={row.id} />

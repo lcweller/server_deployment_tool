@@ -15,7 +15,13 @@ const selectClass = cn(
   "disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
 );
 
-export type HostOption = { id: string; name: string; status: string };
+export type HostOption = {
+  id: string;
+  name: string;
+  status: string;
+  /** False when the host has not heartbeated recently — deploy is blocked server-side. */
+  agentReachable: boolean;
+};
 export type CatalogOption = {
   id: string;
   name: string;
@@ -36,9 +42,14 @@ export function CreateInstanceForm({
 }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [hostId, setHostId] = useState(
-    () => hosts.find((h) => h.status !== "pending")?.id ?? ""
-  );
+  const [hostId, setHostId] = useState(() => {
+    const eligible = hosts.filter((h) => h.status !== "pending");
+    return (
+      eligible.find((h) => h.agentReachable)?.id ??
+      eligible[0]?.id ??
+      ""
+    );
+  });
   const [catalogEntryId, setCatalogEntryId] = useState(
     () =>
       defaultCatalogId && catalog.some((c) => c.id === defaultCatalogId)
@@ -49,10 +60,18 @@ export function CreateInstanceForm({
   const [pending, setPending] = useState(false);
 
   const eligibleHosts = hosts.filter((h) => h.status !== "pending");
+  const selectedHost = eligibleHosts.find((h) => h.id === hostId);
+  const selectedReachable = selectedHost?.agentReachable === true;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!selectedReachable) {
+      setError(
+        "That host has no recent agent heartbeat (it may be off or unreachable). Power it on or fix connectivity, then try again."
+      );
+      return;
+    }
     setPending(true);
     try {
       const res = await fetch("/api/instances", {
@@ -136,7 +155,8 @@ export function CreateInstanceForm({
           >
             {eligibleHosts.map((h) => (
               <option key={h.id} value={h.id}>
-                {h.name} ({h.status})
+                {h.name} ({h.status}
+                {!h.agentReachable ? " — no recent heartbeat" : ""})
               </option>
             ))}
           </select>
@@ -157,9 +177,19 @@ export function CreateInstanceForm({
             ))}
           </select>
         </div>
-        <Button type="submit" disabled={pending} className="w-full sm:w-auto">
+        <Button
+          type="submit"
+          disabled={pending || !selectedReachable}
+          className="w-full sm:w-auto"
+        >
           {pending ? "Creating…" : "Create server"}
         </Button>
+        {!selectedReachable && selectedHost ? (
+          <p className="text-xs text-amber-800 dark:text-amber-500/95">
+            Choose a host with a recent heartbeat, or power this machine on and
+            wait for the agent to reconnect.
+          </p>
+        ) : null}
         {error ? (
           <p className="text-sm text-destructive" role="alert">
             {error}

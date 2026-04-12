@@ -21,6 +21,8 @@ type InstancePayload = {
   allocatedPorts?: AllocatedPorts | null;
   hostMetrics?: HostMetricsSnapshot | null;
   logInsights?: LogInsights;
+  /** False when the assigned host has no recent agent heartbeat. */
+  hostReachable?: boolean;
 };
 
 type Props = {
@@ -326,6 +328,7 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
         status={data.status}
         provisionMessage={data.provisionMessage}
         allocatedPorts={data.allocatedPorts}
+        hostReachable={data.hostReachable ?? true}
       />
     </div>
   );

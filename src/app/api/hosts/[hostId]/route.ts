@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { effectiveHostStatus } from "@/lib/host-presence";
 
 type RouteCtx = { params: Promise<{ hostId: string }> };
 
@@ -84,9 +85,14 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     );
 
   const { enrollmentTokenHash: _h, machineFingerprint: _mf, ...rest } = row;
+  const status = effectiveHostStatus({
+    status: row.status,
+    lastSeenAt: row.lastSeenAt,
+  });
   return NextResponse.json({
     host: {
       ...rest,
+      status,
       awaitingEnrollment: row.status === "pending",
       instanceTotal,
       instancesPendingDelete,

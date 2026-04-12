@@ -11,6 +11,8 @@ type Props = {
   status: string;
   provisionMessage: string | null;
   allocatedPorts: AllocatedPorts | null | undefined;
+  /** From instance API; when false, connectivity check is disabled client-side. */
+  hostReachable?: boolean;
 };
 
 function portList(ports: AllocatedPorts): string {
@@ -37,6 +39,7 @@ export function DeploymentPlaybook({
   status,
   provisionMessage,
   allocatedPorts,
+  hostReachable = true,
 }: Props) {
   if (status === "stopped" || status === "stopping" || status === "starting") {
     return null;
@@ -139,7 +142,10 @@ export function DeploymentPlaybook({
       </p>
 
       {(status === "running" || status === "recovering") && pub ? (
-        <ConnectivityCheckButton instanceId={instanceId} />
+        <ConnectivityCheckButton
+          instanceId={instanceId}
+          hostReachable={hostReachable}
+        />
       ) : null}
 
       <p className="mt-3 font-semibold text-foreground">Fine-tuning (optional)</p>
