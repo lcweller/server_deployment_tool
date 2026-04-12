@@ -5,7 +5,7 @@
  *   npx tsx agent/cli.ts enroll <API_BASE_URL> <ENROLLMENT_TOKEN>
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts heartbeat <API_BASE_URL>
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts run <API_BASE_URL>
- *     → heartbeats + provisions queued servers (stub or SteamCMD — see README)
+ *     → heartbeats + start/stop + watchdog + provisions queued servers (see README)
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts instances <API_BASE_URL>
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts ack <API_BASE_URL> <INSTANCE_ID>
  *   STEAMLINE_API_KEY=... npx tsx agent/cli.ts steam-login [API_BASE_URL]
@@ -22,9 +22,16 @@ import {
 import { collectHeartbeatMetrics } from "./collect-metrics";
 import { fetchPublicIpv4 } from "./public-ip";
 import { loadSteamlineApiKeyEarly } from "./load-api-key";
-import { provisionInstance, type RemoteInstance } from "./provision";
+import {
+  processInstanceStart,
+  processInstanceStop,
+  provisionInstance,
+  type RemoteInstance,
+} from "./provision";
+import { processWatchdogQueue } from "./watchdog";
 import { performDashboardReboot } from "./reboot";
 import { getMachineFingerprint } from "./machine-fingerprint";
+import { persistSteamCredentialsFromDelivery } from "./persist-steam-credentials";
 import { runInteractiveSteamLogin } from "./steam-login";
 
 loadSteamlineApiKeyEarly();
@@ -94,6 +101,11 @@ type HeartbeatJson = {
   ok?: boolean;
   promotedInstanceIds?: string[];
   pendingReboot?: boolean;
+  deliverSteamCredentials?: {
+    steamUsername: string;
+    steamPassword: string;
+    steamGuardCode?: string;
+  };
 };
 
 async function heartbeatOnce(
@@ -136,6 +148,30 @@ async function heartbeatOnce(
   }
 }
 
+async function applyHeartbeatSideEffects(
+  baseUrl: string,
+  data?: HeartbeatJson
+) {
+  if (data?.deliverSteamCredentials) {
+    try {
+      persistSteamCredentialsFromDelivery(data.deliverSteamCredentials);
+      console.error(
+        "[steamline] Steam credentials from the dashboard were written to steamline-agent.env on this machine."
+      );
+    } catch (e) {
+      console.error("[steamline] Could not save Steam credentials locally:", e);
+    }
+  }
+  if (data?.pendingReboot) {
+    console.error("[steamline] Dashboard requested reboot — scheduling…");
+    try {
+      await performDashboardReboot(baseUrl, getBearer());
+    } catch (e) {
+      console.error("[steamline] reboot handler failed:", e);
+    }
+  }
+}
+
 async function heartbeat(baseUrl: string) {
   const { ok, data, text } = await heartbeatOnce(baseUrl);
   console.log(text);
@@ -148,13 +184,8 @@ async function heartbeat(baseUrl: string) {
       data.promotedInstanceIds.join(", ")
     );
   }
-  if (ok && data?.pendingReboot) {
-    console.error("[steamline] Dashboard requested reboot — scheduling…");
-    try {
-      await performDashboardReboot(baseUrl, getBearer());
-    } catch (e) {
-      console.error("[steamline] reboot handler failed:", e);
-    }
+  if (ok) {
+    await applyHeartbeatSideEffects(baseUrl, data);
   }
 }
 
@@ -210,6 +241,57 @@ async function maybeRemoveHost(baseUrl: string) {
   }
 }
 
+async function processWatchdogPhase(baseUrl: string) {
+  const bearer = getBearer();
+  const hostJson = await fetchHostSelf(baseUrl, bearer);
+  if (hostJson?.host.status === "pending_removal") {
+    return;
+  }
+  const list = await fetchInstanceList(baseUrl, bearer);
+  try {
+    await processWatchdogQueue(baseUrl, bearer, list);
+  } catch (e) {
+    console.error("[steamline] watchdog:", e);
+  }
+}
+
+async function processPowerLifecycle(baseUrl: string) {
+  const bearer = getBearer();
+  const hostJson = await fetchHostSelf(baseUrl, bearer);
+  if (hostJson?.host.status === "pending_removal") {
+    return;
+  }
+
+  const maxPerKind = 8;
+  for (let n = 0; n < maxPerKind; n++) {
+    const list = await fetchInstanceList(baseUrl, bearer);
+    const stopping = list.find((i) => i.status === "stopping");
+    if (!stopping) {
+      break;
+    }
+    try {
+      await processInstanceStop(baseUrl, bearer, stopping);
+    } catch (e) {
+      console.error("[steamline] stop instance failed:", e);
+      break;
+    }
+  }
+
+  for (let n = 0; n < maxPerKind; n++) {
+    const list = await fetchInstanceList(baseUrl, bearer);
+    const starting = list.find((i) => i.status === "starting");
+    if (!starting) {
+      break;
+    }
+    try {
+      await processInstanceStart(baseUrl, bearer, starting);
+    } catch (e) {
+      console.error("[steamline] start instance failed:", e);
+      break;
+    }
+  }
+}
+
 async function processProvisionQueue(baseUrl: string) {
   const bearer = getBearer();
   const hostJson = await fetchHostSelf(baseUrl, bearer);
@@ -229,7 +311,12 @@ async function processProvisionQueue(baseUrl: string) {
       console.error(
         "[steamline] heartbeat between provisions (host stays online; SteamCMD cache is shared per instance install dir)…"
       );
-      await heartbeatOnce(baseUrl);
+      const mid = await heartbeatOnce(baseUrl);
+      if (mid.ok) {
+        await applyHeartbeatSideEffects(baseUrl, mid.data);
+      }
+      await processPowerLifecycle(baseUrl);
+      await processWatchdogPhase(baseUrl);
     }
 
     console.error(`[steamline] provisioning "${next.name}" (${next.id})…`);
@@ -265,16 +352,13 @@ async function runLoop(baseUrl: string, intervalMs: number) {
         data.promotedInstanceIds.join(", ")
       );
     }
-    if (ok && data?.pendingReboot) {
-      console.error("[steamline] Dashboard requested reboot — scheduling…");
-      try {
-        await performDashboardReboot(baseUrl, getBearer());
-      } catch (e) {
-        console.error("[steamline] reboot handler failed:", e);
-      }
+    if (ok) {
+      await applyHeartbeatSideEffects(baseUrl, data);
     }
     await processDeletionQueue(baseUrl);
     await maybeRemoveHost(baseUrl);
+    await processPowerLifecycle(baseUrl);
+    await processWatchdogPhase(baseUrl);
     await processProvisionQueue(baseUrl);
     await new Promise((r) => setTimeout(r, intervalMs));
   }

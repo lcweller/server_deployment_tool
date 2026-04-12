@@ -6,6 +6,7 @@ import { DashboardPoller } from "@/components/dashboard-poller";
 import { DeleteHostButton } from "@/components/delete-host-button";
 import { HostRemovalStatus } from "@/components/host-removal-status";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
+import { InstancePowerControls } from "@/components/instance-power-controls";
 import { HostSteamSettings } from "@/components/host-steam-settings";
 import { HostResourcesPanel } from "@/components/host-resources-panel";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
@@ -260,6 +261,12 @@ export default async function HostDetailPage({
                         />
                       </div>
                       <div className="mt-2">
+                        <InstancePowerControls
+                          instanceId={inst.id}
+                          instanceName={inst.name}
+                          status={inst.status}
+                          className="pb-2"
+                        />
                         <InstanceDeployProgress
                           instanceId={inst.id}
                           initial={{
@@ -289,42 +296,18 @@ export default async function HostDetailPage({
           <CardHeader>
             <CardTitle className="text-base">Steam licensed installs</CardTitle>
             <CardDescription>
-              Some catalog titles (for example Counter-Strike 2) require a real
-              Steam login for <code className="text-foreground">app_update</code> on
-              the host. Steamline never stores your Steam password in the database.
+              Games such as Counter-Strike 2 need your Steam account for the
+              download step. Enter your details here once — the enrolled agent
+              pulls them automatically and writes its local env file. You do not
+              need to SSH in or run installer commands for this.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <HostSteamSettings
               hostId={host.id}
+              hostStatus={host.status}
               initialSteamUsername={host.steamUsername ?? null}
             />
-            <div className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
-              <p className="font-medium text-foreground">On the host machine</p>
-              <ol className="mt-2 list-decimal space-y-1 pl-4">
-                <li>
-                  Add to{" "}
-                  <code className="rounded bg-muted px-1">~/.steamline/steamline-agent.env</code>
-                  :{" "}
-                  <code className="rounded bg-muted px-1">STEAMLINE_STEAM_USERNAME=…</code>{" "}
-                  and{" "}
-                  <code className="rounded bg-muted px-1">STEAMLINE_STEAM_PASSWORD=…</code>{" "}
-                  or point{" "}
-                  <code className="rounded bg-muted px-1">STEAMLINE_STEAM_PASSWORD_FILE</code>{" "}
-                  at a root-only file (one line).
-                </li>
-                <li>
-                  Optional one-time email Guard for this run:{" "}
-                  <code className="rounded bg-muted px-1">STEAMLINE_STEAM_GUARD_CODE=…</code>
-                </li>
-                <li>
-                  Interactive SteamCMD (complete Guard once, cache stays on disk):{" "}
-                  <code className="break-all rounded bg-muted px-1">
-                    {`cd ~/.steamline && node steamline-agent.cjs steam-login https://your-dashboard.example`}
-                  </code>
-                </li>
-              </ol>
-            </div>
           </CardContent>
         </Card>
       </div>

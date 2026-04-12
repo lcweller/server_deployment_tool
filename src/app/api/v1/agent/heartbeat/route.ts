@@ -6,6 +6,7 @@ import { db } from "@/db";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import { hosts, serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
+import { decryptSteamHostSecretsPending } from "@/lib/crypto/steam-host-secrets";
 
 const metricsSchema = z
   .object({
@@ -84,32 +85,78 @@ export async function POST(request: Request) {
 
   const pendingReboot = hostRow?.rebootRequestedAt != null;
 
-  await db
-    .update(hosts)
-    .set({
-      lastSeenAt: new Date(),
-      status: "online",
-      ...(agentVersion ? { agentVersion } : {}),
-      ...(metricsSnapshot ? { hostMetrics: metricsSnapshot } : {}),
-    })
-    .where(eq(hosts.id, agent.host.id));
+  try {
+    return await db.transaction(async (tx) => {
+      await tx
+        .update(hosts)
+        .set({
+          lastSeenAt: new Date(),
+          status: "online",
+          ...(agentVersion ? { agentVersion } : {}),
+          ...(metricsSnapshot ? { hostMetrics: metricsSnapshot } : {}),
+        })
+        .where(eq(hosts.id, agent.host.id));
 
-  /** Legacy `draft` rows → `queued` once the host is talking to the API. */
-  const promoted = await db
-    .update(serverInstances)
-    .set({ status: "queued", updatedAt: new Date() })
-    .where(
-      and(
-        eq(serverInstances.hostId, agent.host.id),
-        eq(serverInstances.status, "draft")
-      )
-    )
-    .returning({ id: serverInstances.id });
+      /** Legacy `draft` rows → `queued` once the host is talking to the API. */
+      const promoted = await tx
+        .update(serverInstances)
+        .set({ status: "queued", updatedAt: new Date() })
+        .where(
+          and(
+            eq(serverInstances.hostId, agent.host.id),
+            eq(serverInstances.status, "draft")
+          )
+        )
+        .returning({ id: serverInstances.id });
 
-  return NextResponse.json({
-    ok: true,
-    hostId: agent.host.id,
-    promotedInstanceIds: promoted.map((r) => r.id),
-    pendingReboot,
-  });
+      const [credRow] = await tx
+        .select({ pending: hosts.steamSecretsPending })
+        .from(hosts)
+        .where(eq(hosts.id, agent.host.id))
+        .limit(1);
+
+      let deliverSteamCredentials:
+        | {
+            steamUsername: string;
+            steamPassword: string;
+            steamGuardCode?: string;
+          }
+        | undefined;
+
+      const pending = credRow?.pending?.trim();
+      if (pending) {
+        try {
+          const picked = decryptSteamHostSecretsPending(pending);
+          deliverSteamCredentials = {
+            steamUsername: picked.steamUsername,
+            steamPassword: picked.steamPassword,
+            ...(picked.steamGuardCode
+              ? { steamGuardCode: picked.steamGuardCode }
+              : {}),
+          };
+        } catch {
+          deliverSteamCredentials = undefined;
+        }
+        await tx
+          .update(hosts)
+          .set({ steamSecretsPending: null })
+          .where(eq(hosts.id, agent.host.id));
+      }
+
+      return NextResponse.json({
+        ok: true,
+        hostId: agent.host.id,
+        promotedInstanceIds: promoted.map((r) => r.id),
+        pendingReboot,
+        ...(deliverSteamCredentials
+          ? { deliverSteamCredentials }
+          : {}),
+      });
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Heartbeat transaction failed" },
+      { status: 500 }
+    );
+  }
 }

@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { CreateInstanceForm } from "@/app/(main)/servers/create-instance-form";
 import { DashboardPoller } from "@/components/dashboard-poller";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
+import { InstancePowerControls } from "@/components/instance-power-controls";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
 import { InstanceLogsPanel } from "@/components/instance-logs-panel";
 import { PageHeader } from "@/components/page-header";
@@ -266,6 +267,12 @@ export default async function ServersPage({
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="pt-0">
+                      <InstancePowerControls
+                        instanceId={row.id}
+                        instanceName={row.name}
+                        status={row.status}
+                        className="pb-3"
+                      />
                       <InstanceDeployProgress
                         instanceId={row.id}
                         initial={{

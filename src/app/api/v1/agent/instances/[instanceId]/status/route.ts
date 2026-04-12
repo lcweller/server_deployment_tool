@@ -28,6 +28,16 @@ const bodySchema = z.discriminatedUnion("status", [
     message: z.string().min(1).max(8000),
     allocatedPorts: portsShape.optional(),
   }),
+  z.object({
+    status: z.literal("stopped"),
+    message: z.string().max(8000).optional(),
+    allocatedPorts: portsShape.optional(),
+  }),
+  z.object({
+    status: z.literal("recovering"),
+    message: z.string().max(8000).optional(),
+    allocatedPorts: portsShape.optional(),
+  }),
 ]);
 
 type RouteCtx = { params: Promise<{ instanceId: string }> };
@@ -76,7 +86,12 @@ export async function POST(request: Request, ctx: RouteCtx) {
     (cur === "queued" && next === "installing") ||
     (cur === "registered" && next === "installing") ||
     (cur === "installing" && (next === "running" || next === "failed")) ||
-    (cur === "failed" && next === "installing");
+    (cur === "failed" && next === "installing") ||
+    (cur === "stopping" && next === "stopped") ||
+    (cur === "starting" && (next === "running" || next === "failed")) ||
+    (cur === "running" && next === "recovering") ||
+    (cur === "recovering" &&
+      (next === "running" || next === "failed" || next === "recovering"));
 
   if (!allowed) {
     return NextResponse.json(
@@ -109,6 +124,22 @@ export async function POST(request: Request, ctx: RouteCtx) {
           eq(serverInstances.hostId, agent.host.id)
         )
       );
+  } else if (next === "stopped") {
+    await db
+      .update(serverInstances)
+      .set({
+        status: "stopped",
+        lastError: null,
+        provisionMessage: parsed.data.message ?? "Server stopped.",
+        updatedAt: now,
+        ...portsPatch,
+      })
+      .where(
+        and(
+          eq(serverInstances.id, instanceId),
+          eq(serverInstances.hostId, agent.host.id)
+        )
+      );
   } else if (next === "installing") {
     await db
       .update(serverInstances)
@@ -116,6 +147,24 @@ export async function POST(request: Request, ctx: RouteCtx) {
         status: "installing",
         lastError: null,
         provisionMessage: parsed.data.message ?? null,
+        updatedAt: now,
+        ...portsPatch,
+      })
+      .where(
+        and(
+          eq(serverInstances.id, instanceId),
+          eq(serverInstances.hostId, agent.host.id)
+        )
+      );
+  } else if (next === "recovering") {
+    await db
+      .update(serverInstances)
+      .set({
+        status: "recovering",
+        lastError: null,
+        provisionMessage:
+          parsed.data.message ??
+          "Steamline is automatically restarting the game process…",
         updatedAt: now,
         ...portsPatch,
       })

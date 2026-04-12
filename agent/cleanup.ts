@@ -45,6 +45,48 @@ function killPidFileIfAny(instanceId: string): void {
   }
 }
 
+/** Stop game process (best-effort) — used for dashboard Stop and for delete. */
+export function killGameProcessForInstance(instanceId: string): void {
+  killPidFileIfAny(instanceId);
+}
+
+/**
+ * Remove UPnP + host firewall rules for this instance (files stay on disk).
+ * Safe to call when the install directory is missing (no-op).
+ */
+export async function tearDownNetworkingForInstance(
+  instanceId: string
+): Promise<void> {
+  const dir = instanceInstallDir(instanceId);
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  const upnpLogs = await removeUpnpPortMappings(dir);
+  for (const line of upnpLogs) {
+    console.error(`[steamline] ${line}`);
+  }
+  const lfLogs = removeLinuxFirewallForPorts(dir);
+  for (const line of lfLogs) {
+    console.error(`[steamline] ${line}`);
+  }
+  const fwLogs = removeWindowsFirewallRulesForInstance(dir);
+  for (const line of fwLogs) {
+    console.error(`[steamline] ${line}`);
+  }
+}
+
+/** Remove stale `steamline.pid` after the process has been stopped. */
+export function removeInstancePidFile(instanceId: string): void {
+  const pidFile = path.join(instanceInstallDir(instanceId), "steamline.pid");
+  try {
+    if (fs.existsSync(pidFile)) {
+      fs.unlinkSync(pidFile);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 async function postPurgeComplete(
   apiBase: string,
   bearer: string,
@@ -75,22 +117,11 @@ export async function cleanupPendingDelete(
     return;
   }
   console.error(`[steamline] deleting instance "${inst.name}" (${inst.id})…`);
-  killPidFileIfAny(inst.id);
+  killGameProcessForInstance(inst.id);
   const dir = instanceInstallDir(inst.id);
   try {
     if (fs.existsSync(dir)) {
-      const upnpLogs = await removeUpnpPortMappings(dir);
-      for (const line of upnpLogs) {
-        console.error(`[steamline] ${line}`);
-      }
-      const lfLogs = removeLinuxFirewallForPorts(dir);
-      for (const line of lfLogs) {
-        console.error(`[steamline] ${line}`);
-      }
-      const fwLogs = removeWindowsFirewallRulesForInstance(dir);
-      for (const line of fwLogs) {
-        console.error(`[steamline] ${line}`);
-      }
+      await tearDownNetworkingForInstance(inst.id);
       fs.rmSync(dir, { recursive: true, force: true });
     }
   } catch (e) {

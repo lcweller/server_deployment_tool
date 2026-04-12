@@ -1,9 +1,11 @@
 "use client";
 
+import { ConnectivityCheckButton } from "@/components/connectivity-check-button";
 import type { AllocatedPorts } from "@/lib/allocated-ports";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 
 type Props = {
+  instanceId: string;
   hostName: string | null;
   hostMetrics?: HostMetricsSnapshot | null;
   status: string;
@@ -29,12 +31,16 @@ function portList(ports: AllocatedPorts): string {
  * Connect hints after automation (ports, Windows firewall attempt, public IP from agent).
  */
 export function DeploymentPlaybook({
+  instanceId,
   hostName,
   hostMetrics,
   status,
   provisionMessage,
   allocatedPorts,
 }: Props) {
+  if (status === "stopped" || status === "stopping" || status === "starting") {
+    return null;
+  }
   if (!allocatedPorts || (allocatedPorts.game == null && allocatedPorts.query == null)) {
     return null;
   }
@@ -131,6 +137,10 @@ export function DeploymentPlaybook({
         Carrier-grade NAT or disabled UPnP can still block inbound traffic — then
         use a VPS or a line with a real public IP.
       </p>
+
+      {(status === "running" || status === "recovering") && pub ? (
+        <ConnectivityCheckButton instanceId={instanceId} />
+      ) : null}
 
       <p className="mt-3 font-semibold text-foreground">Fine-tuning (optional)</p>
       <p className="mt-1 text-muted-foreground">

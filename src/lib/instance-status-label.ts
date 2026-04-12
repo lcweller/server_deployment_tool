@@ -25,6 +25,14 @@ export function instanceDashboardStatusLabel(
       return "Failed";
     case "pending_delete":
       return "Removing";
+    case "stopped":
+      return "Stopped";
+    case "stopping":
+      return "Stopping…";
+    case "starting":
+      return "Starting…";
+    case "recovering":
+      return "Restarting…";
     default:
       return status;
   }

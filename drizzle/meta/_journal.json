@@ -71,6 +71,13 @@
       "when": 1775770000000,
       "tag": "0009_host_steam_username",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775771000000,
+      "tag": "0010_host_steam_secrets_pending",
+      "breakpoints": true
     }
   ]
 }

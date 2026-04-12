@@ -10,7 +10,7 @@ Web control plane for **Steam dedicated servers**: sign up, verify email, pair *
 
 - **Next.js 16** · **PostgreSQL** · **Drizzle ORM**
 - **Auth:** bcrypt + DB sessions + **Cloudflare Turnstile** + **SMTP** verification mail
-- **Agent:** CLI in `agent/cli.ts` — enroll, heartbeat, **run** = deletion queue + host teardown + provision (downloads **SteamCMD** on first use; stub only if `STEAMLINE_PROVISION_STUB=1`). Production builds bundle a single **`steamline-agent.cjs`** (see `npm run agent:bundle`) served from the dashboard so hosts can **`curl …/install-agent.sh | bash`** without cloning the repo.
+- **Agent:** CLI in `agent/cli.ts` — enroll, heartbeat, **run** = deletion queue + **start/stop** power lifecycle + **watchdog** (auto-restart dead dedicated processes with backoff, status **`recovering`**) + host teardown + provision (downloads **SteamCMD** on first use; stub only if `STEAMLINE_PROVISION_STUB=1`). Disable the watchdog with **`STEAMLINE_WATCHDOG_DISABLE=1`** on the host if needed. Production builds bundle a single **`steamline-agent.cjs`** (see `npm run agent:bundle`) served from the dashboard so hosts can **`curl …/install-agent.sh | bash`** without cloning the repo.
 - **Billing:** Stripe Checkout + Customer Portal + webhooks
 - **Jobs:** `GET /api/cron/catalog-ingest` and `GET /api/cron/prune-logs` (Bearer `CRON_SECRET`)
 
@@ -48,7 +48,7 @@ npm run dev
 1. Open http://localhost:3000 — **Register** (use Mailpit http://localhost:8025 to read the verification link if SMTP points to Mailpit).
 2. After verifying, open **Hosts** → **Add host** (wizard: name → OS → copy enroll command).
 3. On the target machine (Linux, macOS, or WSL): run the copied **one-line** command (requires **Node.js 18+** and **curl**). It downloads **`steamline-agent.cjs`**, enrolls, and writes **`~/.steamline/steamline-agent.env`**. The wizard detects enrollment automatically; open the host for full details.
-4. On the host, start the loop: **`cd ~/.steamline && node steamline-agent.cjs run <API_URL>`** (or from a dev clone: **`npm run agent:run`** on Windows, **`npm run agent -- run <URL>`** with the repo). That loop **heartbeats** and **provisions** UI servers (`queued` → `installing` → `running`).
+4. On the host, start the loop: **`cd ~/.steamline && node steamline-agent.cjs run <API_URL>`** (or from a dev clone: **`npm run agent:run`** on Windows, **`npm run agent -- run <URL>`** with the repo). That loop **heartbeats**, applies **Stop**/**Start** from the dashboard (`stopping`/`stopped`/`starting`/`running`), and **provisions** new servers (`queued` → `installing` → `running`).
 5. Optional: `npm run catalog:ingest:local` (with `npm run dev` running) to pull Steam titles into the catalog.
 6. Open **Servers** → create an instance (catalog + enrolled host), or **Catalog** → **Deploy to host**. Watch status update as the agent runs.
 
@@ -113,7 +113,7 @@ The first time, it creates **`steamline-agent.env`**. Paste the **`apiKey`** fro
 
 **Manual:** set `STEAMLINE_API_KEY` and run `npm run agent -- run "<URL>"`, or use **`steamline-agent.env.example`**.
 
-3. Create servers in **Servers**; they start as **`queued`**. The agent loop provisions one per cycle: **`queued` → `installing` → `running`** (or **`failed`**).
+3. Create servers in **Servers**; they start as **`queued`**. The agent loop provisions one per cycle: **`queued` → `installing` → `running`** (or **`failed`**). For a **running** server, **Stop** in the UI moves it to **`stopped`** (process ended, firewall/UPnP cleared, files kept); **Start** brings it back without re-running SteamCMD. When the host reports a **public IPv4**, the deploy playbook includes **Test connection from the internet** (TCP reachability from the app server — UDP-heavy games may still show “closed” while players can join).
 
 **Provisioning (on the host):**
 
@@ -124,9 +124,9 @@ The first time, it creates **`steamline-agent.env`**. Paste the **`apiKey`** fro
 
 Optional: `STEAMLINE_STEAMCMD_PATH` to use an existing SteamCMD binary; `STEAMLINE_DATA_ROOT` / `STEAMLINE_INSTANCE_ROOT` for data locations.
 
-**Licensed SteamCMD:** set `STEAMLINE_STEAM_USERNAME` plus `STEAMLINE_STEAM_PASSWORD` or `STEAMLINE_STEAM_PASSWORD_FILE` on the host for titles that require it (for example CS2 / App 730). Optional `STEAMLINE_STEAM_GUARD_CODE` for email Guard on that run. Run `node steamline-agent.cjs steam-login [API_BASE_URL]` on the host for an interactive SteamCMD session. Passwords are never stored in the dashboard API.
+**Licensed SteamCMD:** on the host detail page use **Push to host** — credentials are encrypted briefly on the server, delivered once to the enrolled agent over HTTPS, then removed from the database while the agent writes `~/.steamline/steamline-agent.env`. Advanced operators can still set `STEAMLINE_STEAM_*` manually or run `steam-login`. Configure `STEAMLINE_HOST_STEAM_SECRET` (or a long `AUTH_SECRET`) for the encryption key.
 
-**Dedicated process (optional):** After a successful SteamCMD install, set **`STEAMLINE_AFTER_INSTALL_CMD`** to a shell command run in the instance install directory (e.g. start your dedicated server). The agent spawns it detached and writes **`steamline.pid`** so dashboard **Delete** can stop the process before removing files.
+**Dedicated process (optional):** After a successful SteamCMD install, set **`STEAMLINE_AFTER_INSTALL_CMD`** to a shell command run in the instance install directory (e.g. start your dedicated server). The agent spawns it detached and writes **`steamline.pid`** so dashboard **Stop** / **Delete** can stop the process (Delete also removes files).
 
 **Deletion:** In the UI, **Delete** on a server sets **`pending_delete`**; the agent removes files, calls **`purge-complete`**, and the row disappears. **Remove host** sets instances to **`pending_delete`** and the host to **`pending_removal`**; after the agent wipes data it runs **`STEAMLINE_UNINSTALL_SCRIPT`** (if set), deletes **`steamline-data`** (or **`STEAMLINE_DATA_ROOT`**), then calls **`removal-complete`** so API keys and the host row are removed.
 

@@ -1,9 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { db } from "@/db";
-import { catalogEntries, hosts, serverInstances } from "@/db/schema";
+import {
+  catalogEntries,
+  hosts,
+  instanceLogLines,
+  serverInstances,
+} from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { analyzeRecentLogLines } from "@/lib/log-insights";
 
 type RouteCtx = { params: Promise<{ instanceId: string }> };
 
@@ -54,7 +61,145 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ instance: row });
+  const logRows = await db
+    .select({ line: instanceLogLines.line })
+    .from(instanceLogLines)
+    .where(eq(instanceLogLines.instanceId, instanceId))
+    .orderBy(desc(instanceLogLines.id))
+    .limit(220);
+
+  const logInsights = analyzeRecentLogLines(
+    logRows.map((r) => r.line)
+  );
+
+  return NextResponse.json({
+    instance: {
+      ...row,
+      logInsights: logInsights ?? undefined,
+    },
+  });
+}
+
+const powerBodySchema = z.object({
+  power: z.enum(["stop", "start"]),
+});
+
+/**
+ * Start or stop a server on the host (agent picks up `starting` / `stopping`).
+ */
+export async function PATCH(request: Request, ctx: RouteCtx) {
+  const auth = await requireVerifiedUser();
+  if ("error" in auth) {
+    return auth.error;
+  }
+
+  const { instanceId } = await ctx.params;
+
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = powerBodySchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid body", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(serverInstances)
+    .where(
+      and(
+        eq(serverInstances.id, instanceId),
+        eq(serverInstances.userId, auth.user.id)
+      )
+    )
+    .limit(1);
+
+  const inst = rows[0];
+  if (!inst) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!inst.hostId) {
+    return NextResponse.json(
+      { error: "Assign this server to a host before changing power state." },
+      { status: 409 }
+    );
+  }
+
+  if (inst.status === "pending_delete") {
+    return NextResponse.json(
+      { error: "This server is being removed — power controls are disabled." },
+      { status: 409 }
+    );
+  }
+
+  const now = new Date();
+
+  if (parsed.data.power === "stop") {
+    if (inst.status !== "running" && inst.status !== "recovering") {
+      return NextResponse.json(
+        {
+          error:
+            "Only a running server (or one that is automatically restarting) can be stopped. Wait for deployment to finish, or refresh if it already stopped.",
+        },
+        { status: 409 }
+      );
+    }
+    await db
+      .update(serverInstances)
+      .set({
+        status: "stopping",
+        provisionMessage:
+          "Stop requested — your host will end the game process and close firewall and router mappings for this server.",
+        lastError: null,
+        updatedAt: now,
+      })
+      .where(eq(serverInstances.id, instanceId));
+
+    return NextResponse.json({
+      ok: true,
+      instanceId,
+      status: "stopping",
+      message:
+        "Your host will apply this within about one agent cycle (typically under a minute).",
+    });
+  }
+
+  if (inst.status !== "stopped") {
+    return NextResponse.json(
+      {
+        error:
+          "Only a stopped server can be started again. Stop it first, or wait for the host to finish stopping.",
+      },
+      { status: 409 }
+    );
+  }
+
+  await db
+    .update(serverInstances)
+    .set({
+      status: "starting",
+      provisionMessage:
+        "Start requested — your host will launch the game server again using the files already on disk.",
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(eq(serverInstances.id, instanceId));
+
+  return NextResponse.json({
+    ok: true,
+    instanceId,
+    status: "starting",
+    message:
+      "Your host will bring the server online within about one agent cycle (typically under a minute).",
+  });
 }
 
 /**

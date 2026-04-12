@@ -3,6 +3,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 import { guessAutoLaunchPlan, type AutoLaunchPlan } from "./auto-launch";
 import {
@@ -24,6 +25,12 @@ import {
   type SteamCmdLoginPlan,
 } from "./steam-auth";
 import { applyWindowsFirewallForPorts } from "./windows-firewall";
+import {
+  killGameProcessForInstance,
+  removeInstancePidFile,
+  tearDownNetworkingForInstance,
+} from "./cleanup";
+import { resetWatchdogState } from "./watchdog-state";
 
 export type RemoteInstance = {
   id: string;
@@ -63,7 +70,7 @@ async function postJson(
   return { ok: res.ok, status: res.status, text };
 }
 
-async function postStatus(
+export async function postInstanceStatus(
   apiBase: string,
   bearer: string,
   instanceId: string,
@@ -80,7 +87,7 @@ async function postStatus(
   }
 }
 
-async function postLogs(
+export async function postInstanceLogs(
   apiBase: string,
   bearer: string,
   instanceId: string,
@@ -98,14 +105,14 @@ async function postLogs(
 }
 
 /** Agent API accepts up to 500 lines per POST — chunk for long SteamCMD output. */
-async function postLogLines(
+export async function postLogLines(
   apiBase: string,
   bearer: string,
   instanceId: string,
   lines: string[]
 ): Promise<void> {
   for (let i = 0; i < lines.length; i += LOG_CHUNK) {
-    await postLogs(apiBase, bearer, instanceId, lines.slice(i, i + LOG_CHUNK));
+    await postInstanceLogs(apiBase, bearer, instanceId, lines.slice(i, i + LOG_CHUNK));
   }
 }
 
@@ -311,6 +318,220 @@ async function runSteamCmdWithCapture(
   });
 }
 
+type ResolvedPorts = NonNullable<RemoteInstance["allocatedPorts"]>;
+
+/**
+ * After game files exist: bind probe, open host firewall + UPnP, spawn dedicated (shared by
+ * first-time provision and dashboard **Start**).
+ */
+export async function runDedicatedLaunchPhase(
+  apiBase: string,
+  bearer: string,
+  inst: RemoteInstance,
+  dir: string,
+  mode: "fresh_install" | "restart_from_stopped"
+): Promise<{ dedicatedStarted: boolean; resolvedPorts: ResolvedPorts | null }> {
+  if (mode === "restart_from_stopped") {
+    await postLogLines(apiBase, bearer, inst.id, [
+      "[steamline] Starting game server again from existing install (no SteamCMD download).",
+    ]);
+  }
+
+  let resolvedPorts = inst.allocatedPorts ?? null;
+  try {
+    const probe = await resolvePortsWithLocalProbe(
+      inst.allocatedPorts ?? undefined,
+      inst.template ?? undefined
+    );
+    resolvedPorts = probe.ports;
+    if (probe.adjusted) {
+      await postLogLines(apiBase, bearer, inst.id, [
+        `[steamline] Local bind probe chose different ports than the dashboard (another program may be using the original ports): game=${resolvedPorts?.game ?? "—"} query=${resolvedPorts?.query ?? "—"}`,
+      ]);
+    } else {
+      await postLogLines(apiBase, bearer, inst.id, [
+        `[steamline] Network ports verified free (TCP+UDP): game=${resolvedPorts?.game ?? "—"} query=${resolvedPorts?.query ?? "—"}`,
+      ]);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await postLogLines(apiBase, bearer, inst.id, [
+      `[steamline] Port probe could not run (${msg}). Using control-plane ports from the dashboard.`,
+    ]);
+    resolvedPorts = inst.allocatedPorts ?? {
+      game: 27_015,
+      query: 27_016,
+    };
+  }
+
+  const portEnv = formatPortEnv(inst, dir, resolvedPorts ?? {});
+  const fwLines = applyWindowsFirewallForPorts(inst.id, dir, resolvedPorts ?? {});
+  if (fwLines.length > 0) {
+    await postLogLines(apiBase, bearer, inst.id, [
+      "[steamline] Windows Firewall (best effort — agent may need Administrator):",
+      ...fwLines,
+    ]);
+  }
+
+  const linuxFw = applyLinuxFirewallForPorts(dir, resolvedPorts ?? {});
+  if (linuxFw.length > 0) {
+    await postLogLines(apiBase, bearer, inst.id, [
+      "[steamline] Linux host firewall (firewalld, best effort):",
+      ...linuxFw,
+    ]);
+  }
+
+  const upnpLogs = await tryUpnpPortForward(inst.id, dir, resolvedPorts ?? {});
+  if (upnpLogs.length > 0) {
+    await postLogLines(apiBase, bearer, inst.id, [
+      "[steamline] Router UPnP (best effort — IGD must be enabled on the router):",
+      ...upnpLogs,
+    ]);
+  }
+
+  const startPlan = resolveStartPlan(inst, dir);
+  let dedicatedStarted = false;
+  if (startPlan) {
+    const srcLabel =
+      startPlan.source === "env"
+        ? "STEAMLINE_AFTER_INSTALL_CMD"
+        : startPlan.source === "catalog"
+          ? "catalog template.afterInstallCmd"
+          : startPlan.source === "preset"
+            ? `built-in Steam App preset (${launchPresetFor(inst.steamAppId)?.label ?? inst.steamAppId ?? "?"})`
+            : "auto-detected binary under install tree (heuristic)";
+    await postLogLines(apiBase, bearer, inst.id, [
+      `[steamline] Starting dedicated process (${srcLabel})…`,
+      "[steamline] Environment includes STEAMLINE_GAME_PORT, STEAMLINE_QUERY_PORT, STEAMLINE_INSTALL_DIR, STEAMLINE_PORTS_JSON (and %STEAMLINE_*% expands on Windows cmd).",
+    ]);
+    if (startPlan.source === "auto") {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] No explicit start command — scanning install folder for a likely server executable (disable with STEAMLINE_DISABLE_AUTO_LAUNCH=1).",
+      ]);
+    }
+    try {
+      const child = spawnStartPlan(inst, startPlan, portEnv, dir);
+      child.unref();
+      if (child.pid != null) {
+        dedicatedStarted = true;
+        writeSteamlinePid(inst.id, child);
+        await postLogLines(apiBase, bearer, inst.id, [
+          `[steamline] Wrote steamline.pid for pid ${child.pid} (stop via dashboard Stop or Delete).`,
+        ]);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await postLogLines(apiBase, bearer, inst.id, [
+        `[steamline] Start command failed: ${msg}`,
+      ]);
+    }
+  } else {
+    const detail =
+      mode === "fresh_install"
+        ? "No start path: install produced no recognizable server binary and STEAMLINE_AFTER_INSTALL_CMD, catalog afterInstallCmd, and auto-launch were all empty/disabled."
+        : "No start path: STEAMLINE_AFTER_INSTALL_CMD, catalog afterInstallCmd, and auto-launch were all empty/disabled.";
+    await postLogLines(apiBase, bearer, inst.id, [`[steamline] ${detail}`]);
+  }
+
+  if (dedicatedStarted) {
+    resetWatchdogState(inst.id);
+  }
+
+  return { dedicatedStarted, resolvedPorts };
+}
+
+/**
+ * Dashboard **Stop**: kill process, tear down networking, keep files on disk.
+ */
+export async function processInstanceStop(
+  apiBase: string,
+  bearer: string,
+  inst: RemoteInstance
+): Promise<void> {
+  if (inst.status !== "stopping") {
+    return;
+  }
+  await postLogLines(apiBase, bearer, inst.id, [
+    "[steamline] Stop requested — ending the game process and removing firewall and UPnP mappings for this instance.",
+  ]);
+  killGameProcessForInstance(inst.id);
+  await tearDownNetworkingForInstance(inst.id);
+  removeInstancePidFile(inst.id);
+  resetWatchdogState(inst.id);
+  await postInstanceStatus(apiBase, bearer, inst.id, {
+    status: "stopped",
+    message:
+      "Server stopped on this host. Firewall and router mappings for this server were removed where possible. Game files remain on disk — press Start in the dashboard to run again.",
+    ...(inst.allocatedPorts && Object.keys(inst.allocatedPorts).length > 0
+      ? { allocatedPorts: inst.allocatedPorts }
+      : {}),
+  });
+}
+
+/**
+ * Dashboard **Start** after **Stop**: reuse install dir, re-open networking, spawn dedicated.
+ */
+export async function processInstanceStart(
+  apiBase: string,
+  bearer: string,
+  inst: RemoteInstance
+): Promise<void> {
+  if (inst.status !== "starting") {
+    return;
+  }
+  try {
+    const dir = instanceDataDir(inst.id);
+    const steamApps = path.join(dir, "steamapps");
+    if (!fs.existsSync(steamApps)) {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] Cannot start — no Steam library folder under this instance. If you removed files manually, delete this server in the dashboard and create a new one.",
+      ]);
+      await postInstanceStatus(apiBase, bearer, inst.id, {
+        status: "failed",
+        message:
+          "Start failed: game files are missing from this instance. Remove the server in the dashboard and deploy again.",
+      });
+      return;
+    }
+
+    const { dedicatedStarted, resolvedPorts } = await runDedicatedLaunchPhase(
+      apiBase,
+      bearer,
+      inst,
+      dir,
+      "restart_from_stopped"
+    );
+
+    const statusBody: Record<string, unknown> = {
+      status: "running",
+      message: dedicatedStarted
+        ? `Dedicated command started. Install dir: ${dir}`
+        : `Start finished but no dedicated process launched (see logs). Install dir: ${dir}`,
+    };
+    if (resolvedPorts && Object.keys(resolvedPorts).length > 0) {
+      statusBody.allocatedPorts = resolvedPorts;
+    }
+    await postInstanceStatus(apiBase, bearer, inst.id, statusBody);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    try {
+      await postLogLines(apiBase, bearer, inst.id, [
+        `[steamline] Start failed unexpectedly: ${msg}`,
+      ]);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await postInstanceStatus(apiBase, bearer, inst.id, {
+        status: "failed",
+        message: `Start failed: ${msg}`,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /**
  * Provision one `queued` instance: installing → (running | failed).
  */
@@ -325,7 +546,7 @@ export async function provisionInstance(
 
   const stub = process.env.STEAMLINE_PROVISION_STUB === "1";
 
-  await postStatus(apiBase, bearer, inst.id, {
+  await postInstanceStatus(apiBase, bearer, inst.id, {
     status: "installing",
     message: stub
       ? "Stub provision (STEAMLINE_PROVISION_STUB=1)…"
@@ -344,12 +565,12 @@ export async function provisionInstance(
     if (inst.allocatedPorts && Object.keys(inst.allocatedPorts).length > 0) {
       stubBody.allocatedPorts = inst.allocatedPorts;
     }
-    await postStatus(apiBase, bearer, inst.id, stubBody);
+    await postInstanceStatus(apiBase, bearer, inst.id, stubBody);
     return;
   }
 
   if (!inst.steamAppId) {
-    await postStatus(apiBase, bearer, inst.id, {
+    await postInstanceStatus(apiBase, bearer, inst.id, {
       status: "failed",
       message: "Catalog entry has no steam_app_id.",
     });
@@ -384,7 +605,7 @@ export async function provisionInstance(
         "[steamline] Licensed SteamCMD install requires host credentials.",
         `[steamline] ${loginPlan.reason}`,
       ]);
-      await postStatus(apiBase, bearer, inst.id, {
+      await postInstanceStatus(apiBase, bearer, inst.id, {
         status: "failed",
         message: loginPlan.reason,
       });
@@ -430,101 +651,13 @@ export async function provisionInstance(
     }
 
     if (code === 0) {
-      let resolvedPorts = inst.allocatedPorts ?? null;
-      let portsAdjusted = false;
-      try {
-        const probe = await resolvePortsWithLocalProbe(
-          inst.allocatedPorts ?? undefined,
-          inst.template ?? undefined
-        );
-        resolvedPorts = probe.ports;
-        portsAdjusted = probe.adjusted;
-        if (portsAdjusted) {
-          await postLogLines(apiBase, bearer, inst.id, [
-            `[steamline] Local bind probe chose different ports than the dashboard (another program may be using the original ports): game=${resolvedPorts.game ?? "—"} query=${resolvedPorts.query ?? "—"}`,
-          ]);
-        } else {
-          await postLogLines(apiBase, bearer, inst.id, [
-            `[steamline] Network ports verified free (TCP+UDP): game=${resolvedPorts.game ?? "—"} query=${resolvedPorts.query ?? "—"}`,
-          ]);
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        await postLogLines(apiBase, bearer, inst.id, [
-          `[steamline] Port probe could not run (${msg}). Using control-plane ports from the dashboard.`,
-        ]);
-        resolvedPorts = inst.allocatedPorts ?? {
-          game: 27_015,
-          query: 27_016,
-        };
-      }
-
-      const portEnv = formatPortEnv(inst, dir, resolvedPorts ?? {});
-      const fwLines = applyWindowsFirewallForPorts(inst.id, dir, resolvedPorts ?? {});
-      if (fwLines.length > 0) {
-        await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] Windows Firewall (best effort — agent may need Administrator):",
-          ...fwLines,
-        ]);
-      }
-
-      const linuxFw = applyLinuxFirewallForPorts(dir, resolvedPorts ?? {});
-      if (linuxFw.length > 0) {
-        await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] Linux host firewall (firewalld, best effort):",
-          ...linuxFw,
-        ]);
-      }
-
-      const upnpLogs = await tryUpnpPortForward(inst.id, dir, resolvedPorts ?? {});
-      if (upnpLogs.length > 0) {
-        await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] Router UPnP (best effort — IGD must be enabled on the router):",
-          ...upnpLogs,
-        ]);
-      }
-
-      const startPlan = resolveStartPlan(inst, dir);
-      let dedicatedStarted = false;
-      if (startPlan) {
-        const srcLabel =
-          startPlan.source === "env"
-            ? "STEAMLINE_AFTER_INSTALL_CMD"
-            : startPlan.source === "catalog"
-              ? "catalog template.afterInstallCmd"
-              : startPlan.source === "preset"
-                ? `built-in Steam App preset (${launchPresetFor(inst.steamAppId)?.label ?? inst.steamAppId ?? "?"})`
-                : "auto-detected binary under install tree (heuristic)";
-        await postLogLines(apiBase, bearer, inst.id, [
-          `[steamline] Starting dedicated process (${srcLabel})…`,
-          "[steamline] Environment includes STEAMLINE_GAME_PORT, STEAMLINE_QUERY_PORT, STEAMLINE_INSTALL_DIR, STEAMLINE_PORTS_JSON (and %STEAMLINE_*% expands on Windows cmd).",
-        ]);
-        if (startPlan.source === "auto") {
-          await postLogLines(apiBase, bearer, inst.id, [
-            "[steamline] No explicit start command — scanning install folder for a likely server executable (disable with STEAMLINE_DISABLE_AUTO_LAUNCH=1).",
-          ]);
-        }
-        try {
-          const child = spawnStartPlan(inst, startPlan, portEnv, dir);
-          child.unref();
-          if (child.pid != null) {
-            dedicatedStarted = true;
-            writeSteamlinePid(inst.id, child);
-            await postLogLines(apiBase, bearer, inst.id, [
-              `[steamline] Wrote steamline.pid for pid ${child.pid} (stop via dashboard delete).`,
-            ]);
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          await postLogLines(apiBase, bearer, inst.id, [
-            `[steamline] Start command failed: ${msg}`,
-          ]);
-        }
-      } else {
-        await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] No start path: install produced no recognizable server binary and STEAMLINE_AFTER_INSTALL_CMD, catalog afterInstallCmd, and auto-launch were all empty/disabled.",
-        ]);
-      }
+      const { dedicatedStarted, resolvedPorts } = await runDedicatedLaunchPhase(
+        apiBase,
+        bearer,
+        inst,
+        dir,
+        "fresh_install"
+      );
       const statusBody: Record<string, unknown> = {
         status: "running",
         message: dedicatedStarted
@@ -534,13 +667,13 @@ export async function provisionInstance(
       if (resolvedPorts && Object.keys(resolvedPorts).length > 0) {
         statusBody.allocatedPorts = resolvedPorts;
       }
-      await postStatus(apiBase, bearer, inst.id, statusBody);
+      await postInstanceStatus(apiBase, bearer, inst.id, statusBody);
     } else {
       const hint =
         code === 127
           ? ' If logs show steamcmd.sh + "cannot execute: required file not found" for linux32/steamcmd, the 32-bit ELF loader is missing (usually /lib/ld-linux.so.2). As root: apt-get install -y libc6-i386 (after dpkg --add-architecture i386). Not a bash problem.'
           : "";
-      await postStatus(apiBase, bearer, inst.id, {
+      await postInstanceStatus(apiBase, bearer, inst.id, {
         status: "failed",
         message: `SteamCMD exited with code ${code}.${hint} See instance logs below for full SteamCMD output and diagnostics.`,
       });
@@ -548,7 +681,7 @@ export async function provisionInstance(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await postLogLines(apiBase, bearer, inst.id, [`[steamline] error: ${msg}`]);
-    await postStatus(apiBase, bearer, inst.id, {
+    await postInstanceStatus(apiBase, bearer, inst.id, {
       status: "failed",
       message: msg,
     });

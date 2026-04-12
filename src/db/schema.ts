@@ -104,6 +104,11 @@ export const hosts = pgTable("hosts", {
    * The agent never reads the password from the API — set credentials only on the host (env or files).
    */
   steamUsername: text("steam_username"),
+  /**
+   * AES-256-GCM blob (base64) of pending SteamCMD secrets — delivered once on the next
+   * authenticated agent heartbeat, then cleared. Never logged.
+   */
+  steamSecretsPending: text("steam_secrets_pending"),
   updateMode: text("update_mode").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -135,7 +140,12 @@ export const serverInstances = pgTable("server_instances", {
     { onDelete: "set null" }
   ),
   name: text("name").notNull(),
-  /** queued | installing | running | failed (+ legacy draft) */
+  /**
+   * draft → queued → installing → running | failed
+   * Power: running → stopping → stopped → starting → running
+   * Watchdog: running → recovering → running | failed
+   * pending_delete = removal in progress
+   */
   status: text("status").notNull().default("draft"),
   provisionMessage: text("provision_message"),
   lastError: text("last_error"),

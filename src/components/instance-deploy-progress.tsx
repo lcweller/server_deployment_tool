@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DeploymentPlaybook } from "@/components/deployment-playbook";
 import type { AllocatedPorts } from "@/lib/allocated-ports";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
+import type { LogInsights } from "@/lib/log-insights";
 import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ type InstancePayload = {
   hostName: string | null;
   allocatedPorts?: AllocatedPorts | null;
   hostMetrics?: HostMetricsSnapshot | null;
+  logInsights?: LogInsights;
 };
 
 type Props = {
@@ -26,7 +28,14 @@ type Props = {
   initial: InstancePayload;
 };
 
-const ACTIVE = new Set(["draft", "queued", "installing"]);
+const ACTIVE = new Set([
+  "draft",
+  "queued",
+  "installing",
+  "stopping",
+  "starting",
+  "recovering",
+]);
 
 type BarMode = "none" | "determinate" | "indeterminate";
 
@@ -87,6 +96,50 @@ function explain(
       barMode: "determinate",
     };
   }
+  if (status === "stopped") {
+    return {
+      headline: "Stopped",
+      detail:
+        provisionMessage ||
+        "The game server is not running. Firewall and router mappings for this server were closed where possible. Your game files are still on the host — press Start to play again.",
+      pct: 0,
+      pulse: false,
+      barMode: "none",
+    };
+  }
+  if (status === "stopping") {
+    return {
+      headline: "Stopping on host…",
+      detail:
+        provisionMessage ||
+        "Ending the game process and taking down network openings for this server.",
+      pct: 40,
+      pulse: true,
+      barMode: "indeterminate",
+    };
+  }
+  if (status === "starting") {
+    return {
+      headline: "Starting on host…",
+      detail:
+        provisionMessage ||
+        "Launching your game server again from the files already installed on the host.",
+      pct: 60,
+      pulse: true,
+      barMode: "indeterminate",
+    };
+  }
+  if (status === "recovering") {
+    return {
+      headline: "Automatic restart",
+      detail:
+        provisionMessage ||
+        "The game process stopped or failed a health check. Steamline is trying to bring it back without reinstalling game files.",
+      pct: 45,
+      pulse: true,
+      barMode: "indeterminate",
+    };
+  }
   if (status === "installing") {
     return {
       headline: "Installing (SteamCMD / setup)",
@@ -145,19 +198,17 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
     ACTIVE.has(data.status) || data.status === "pending_delete";
 
   useEffect(() => {
-    if (!shouldPoll) {
-      return;
-    }
+    let cancelled = false;
     const tick = async () => {
       try {
         const res = await fetch(`/api/instances/${instanceId}`, {
           cache: "no-store",
         });
-        if (!res.ok) {
+        if (!res.ok || cancelled) {
           return;
         }
         const json = (await res.json()) as { instance?: InstancePayload };
-        if (json.instance) {
+        if (json.instance && !cancelled) {
           const inst = json.instance as InstancePayload & {
             updatedAt?: string;
           };
@@ -170,10 +221,18 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
         /* ignore */
       }
     };
-    const fast = window.setInterval(tick, 2500);
     void tick();
-    return () => window.clearInterval(fast);
-  }, [instanceId, shouldPoll, data.status]);
+    if (!shouldPoll) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const fast = window.setInterval(tick, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(fast);
+    };
+  }, [instanceId, shouldPoll]);
 
   const failed = data.status === "failed";
 
@@ -192,6 +251,26 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
           {detail}
         </p>
       </div>
+      {data.logInsights?.bullets?.length ? (
+        <div
+          className={cn(
+            "rounded-md border px-3 py-2 text-xs leading-relaxed",
+            data.logInsights.severity === "warn"
+              ? "border-amber-500/40 bg-amber-500/[0.08] text-amber-950 dark:text-amber-50/95"
+              : "border-border/70 bg-muted/35 text-muted-foreground"
+          )}
+          role="note"
+        >
+          <p className="font-medium text-foreground/90">
+            From recent logs — worth a quick look
+          </p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+            {data.logInsights.bullets.map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {barMode === "none" ? null : barMode === "indeterminate" ? (
         <div
           className={cn(
@@ -241,6 +320,7 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
         })}
       </p>
       <DeploymentPlaybook
+        instanceId={instanceId}
         hostName={data.hostName}
         hostMetrics={data.hostMetrics}
         status={data.status}
