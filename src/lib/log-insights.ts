@@ -40,7 +40,8 @@ const RULES: Rule[] = [
   {
     id: "loader",
     severity: "warn",
-    test: /cannot execute|required file not found|no such file|ld-linux|error while loading shared libraries/i,
+    /** Avoid matching benign `ldd: ... ld-linux.so.2` lines from our own diagnostics. */
+    test: /error while loading shared libraries|cannot execute: required file not found|bad ELF interpreter|wrong ELF class|=>\s*not found|failed to load.*\.so/i,
     message:
       "A required binary or library may be missing on the host. The game’s Linux runtime or dependencies might need to be installed.",
   },
@@ -79,6 +80,10 @@ export function analyzeRecentLogLines(lines: string[]): LogInsights | null {
   for (const raw of lines) {
     const line = typeof raw === "string" ? raw.trim() : "";
     if (line.length < 4 || line.length > 12_000) {
+      continue;
+    }
+    // Never match on our own support diagnostics (e.g. `ldd: ... ld-linux.so.2` is normal).
+    if (/^\[steamline\] diag:/i.test(line)) {
       continue;
     }
     for (const rule of RULES) {

@@ -121,6 +121,7 @@ The first time, it creates **`steamline-agent.env`**. Paste the **`apiKey`** fro
 |-----|----------|
 | _(default)_ | Downloads SteamCMD into `steamline-data/.cache/steamcmd` if missing, then runs `app_update` for the catalog Steam App ID (anonymous login unless the title requires a licensed account — see host page **Steam licensed installs**). Install dir: `./steamline-data/instances/<id>` or `STEAMLINE_INSTANCE_ROOT`. |
 | `STEAMLINE_PROVISION_STUB=1` | Skips real SteamCMD; marks **`running`** with a stub message (dev only). |
+| `STEAMLINE_INSTALL_LOG_FLUSH_MS` | During `app_update`, push SteamCMD lines to the dashboard on this interval (default **1500** ms; min ~250). Lower = more live logs and more API traffic. |
 
 Optional: `STEAMLINE_STEAMCMD_PATH` to use an existing SteamCMD binary; `STEAMLINE_DATA_ROOT` / `STEAMLINE_INSTANCE_ROOT` for data locations.
 

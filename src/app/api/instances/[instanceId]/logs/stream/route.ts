@@ -70,7 +70,8 @@ export async function GET(request: Request, context: RouteContext) {
       };
 
       await poll();
-      const timer = setInterval(poll, 1000);
+      /** Tight interval so streamed SteamCMD lines show up quickly after the agent posts them. */
+      const timer = setInterval(poll, 750);
 
       request.signal.addEventListener("abort", () => {
         clearInterval(timer);

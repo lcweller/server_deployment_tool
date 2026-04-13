@@ -280,11 +280,35 @@ function steamCmdArgsForUpdate(
   return steamArgs;
 }
 
+type InstallLogStream = {
+  apiBase: string;
+  bearer: string;
+  instanceId: string;
+};
+
+/** Throttle for pushing SteamCMD lines to the control plane during app_update (SSE polls ~1s). */
+const INSTALL_LOG_FLUSH_MS_DEFAULT = 1500;
+/** Also flush when this many complete lines have accumulated. */
+const INSTALL_LOG_LINE_BURST = 40;
+
+function installLogFlushMs(): number {
+  const raw = process.env.STEAMLINE_INSTALL_LOG_FLUSH_MS?.trim();
+  if (!raw) {
+    return INSTALL_LOG_FLUSH_MS_DEFAULT;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 250) {
+    return INSTALL_LOG_FLUSH_MS_DEFAULT;
+  }
+  return Math.min(n, 30_000);
+}
+
 async function runSteamCmdWithCapture(
   launch: SteamCmdLaunch,
   appId: string,
   installDir: string,
-  login: SteamCmdLoginPlan
+  login: SteamCmdLoginPlan,
+  streamLogs?: InstallLogStream
 ): Promise<{ code: number; allLines: string[] }> {
   if (login.kind === "missing_creds") {
     throw new Error("runSteamCmdWithCapture: missing_creds should be handled before spawn");
@@ -293,7 +317,69 @@ async function runSteamCmdWithCapture(
   const allArgs = [...launch.leadArgs, ...steamArgs];
 
   return new Promise((resolve, reject) => {
-    let buf = "";
+    let carry = "";
+    const allLines: string[] = [];
+    let lastPostedIdx = 0;
+    let lastFlushAt = Date.now();
+    const flushMs = streamLogs ? installLogFlushMs() : 0;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let flushChain: Promise<void> = Promise.resolve();
+
+    const flushNow = async (force: boolean) => {
+      if (!streamLogs) {
+        return;
+      }
+      const pending = allLines.length - lastPostedIdx;
+      if (pending < 1) {
+        return;
+      }
+      const elapsed = Date.now() - lastFlushAt;
+      if (
+        !force &&
+        pending < INSTALL_LOG_LINE_BURST &&
+        elapsed < flushMs
+      ) {
+        return;
+      }
+      const slice = allLines.slice(lastPostedIdx);
+      lastPostedIdx = allLines.length;
+      lastFlushAt = Date.now();
+      try {
+        await postLogLines(
+          streamLogs.apiBase,
+          streamLogs.bearer,
+          streamLogs.instanceId,
+          slice
+        );
+      } catch (e) {
+        console.error("[steamline] streaming install logs to API failed:", e);
+      }
+    };
+
+    const enqueueFlush = (force: boolean) => {
+      if (!streamLogs) {
+        return;
+      }
+      flushChain = flushChain
+        .then(() => flushNow(force))
+        .catch(() => {});
+    };
+
+    const appendChunk = (chunk: string) => {
+      const full = carry + chunk;
+      const parts = full.split("\n");
+      carry = parts.pop() ?? "";
+      for (const p of parts) {
+        allLines.push(p.trimEnd());
+      }
+      if (
+        streamLogs &&
+        allLines.length - lastPostedIdx >= INSTALL_LOG_LINE_BURST
+      ) {
+        enqueueFlush(true);
+      }
+    };
+
     const child = spawn(launch.command, allArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
@@ -304,16 +390,43 @@ async function runSteamCmdWithCapture(
             : DEFAULT_PATH,
       },
     });
+
+    if (streamLogs) {
+      intervalId = setInterval(() => enqueueFlush(false), flushMs);
+    }
+
     child.stdout?.on("data", (d: Buffer) => {
-      buf += d.toString("utf8");
+      appendChunk(d.toString("utf8"));
     });
     child.stderr?.on("data", (d: Buffer) => {
-      buf += d.toString("utf8");
+      appendChunk(d.toString("utf8"));
     });
-    child.on("error", reject);
+
+    child.on("error", (err) => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      reject(err);
+    });
+
     child.on("close", (code) => {
-      const allLines = buf.split("\n").map((s) => s.trimEnd());
-      resolve({ code: code ?? 1, allLines });
+      if (carry.length) {
+        allLines.push(carry.trimEnd());
+        carry = "";
+      }
+
+      const finish = async () => {
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+        if (streamLogs) {
+          await flushChain;
+          await flushNow(true);
+        }
+        resolve({ code: code ?? 1, allLines });
+      };
+
+      void finish().catch(reject);
     });
   });
 }
@@ -618,23 +731,24 @@ export async function provisionInstance(
       ]);
     }
 
+    await postLogLines(apiBase, bearer, inst.id, [
+      `[steamline] Starting SteamCMD (app_update ${inst.steamAppId}). Install output streams to this log every few seconds — first download can still take many minutes.`,
+    ]);
+
     const { code, allLines } = await runSteamCmdWithCapture(
       launch,
       inst.steamAppId,
       dir,
-      loginPlan
+      loginPlan,
+      { apiBase, bearer, instanceId: inst.id }
     );
 
     const nonEmpty = allLines.filter((l) => l.length > 0);
 
     if (code === 0) {
-      const tail = nonEmpty.slice(-150);
-      if (tail.length) {
-        await postLogLines(apiBase, bearer, inst.id, [
-          "[steamline] SteamCMD stdout/stderr (tail):",
-          ...tail,
-        ]);
-      }
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] SteamCMD finished successfully (exit 0). Raw lines above were streamed during the run.",
+      ]);
     } else {
       const body =
         nonEmpty.length > 0
