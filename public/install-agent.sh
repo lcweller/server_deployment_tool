@@ -3,9 +3,11 @@
 # Usage (hosted Steamline — customers use your public URL, e.g.):
 #   curl -fsSL "https://game.layeroneconstultants.com/install-agent.sh" | bash -s -- "https://game.layeroneconstultants.com" "<ENROLLMENT_TOKEN>"
 #
-# Requires: curl, bash, Node.js 18+ on PATH.
+# Requires: curl, bash. Node.js 18+ is installed automatically via apt/apk when running
+# as root (or STEAMLINE_APT_INSTALL=1). Otherwise install Node yourself.
 # After enroll, starts the agent in the background (no second SSH session needed).
 # Set STEAMLINE_INSTALL_SKIP_RUN=1 to only enroll and write steamline-agent.env.
+# Set STEAMLINE_SKIP_NODE_INSTALL=1 to never install Node via apt/apk (use existing node).
 #
 # Agent automation (defaults ON — set to 1 to skip pieces):
 #   STEAMLINE_SKIP_UPNP              — do not ask the router (UPnP IGD) to forward ports
@@ -22,6 +24,13 @@ set -euo pipefail
 die() {
   echo "steamline: $*" >&2
   exit 1
+}
+
+steamline_node_version_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  local m
+  m="$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || echo 0)"
+  [[ "$m" =~ ^[0-9]+$ ]] && (( m >= 18 ))
 }
 
 BASE_URL="${1:-}"
@@ -73,6 +82,46 @@ steamline_try_apt_bootstrap() {
     || apt-get install -y -qq lib32gcc1 2>/dev/null || true
 }
 
+# Debian/Ubuntu: ensure Node.js 18+ (agent is a Node bundle). Uses distro package when
+# new enough, otherwise NodeSource 20.x LTS.
+steamline_try_apt_install_nodejs() {
+  [[ "${STEAMLINE_SKIP_NODE_INSTALL:-0}" == "1" ]] && return 0
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  [[ "${STEAMLINE_SKIP_APT:-0}" == "1" ]] && return 0
+  [[ -x /usr/bin/apt-get ]] || return 0
+  if [[ "$(id -u)" != "0" ]] && [[ "${STEAMLINE_APT_INSTALL:-0}" != "1" ]]; then
+    return 0
+  fi
+
+  steamline_node_version_ok && return 0
+
+  echo "steamline: Installing Node.js (v18+ required for the agent)…" >&2
+  export DEBIAN_FRONTEND=noninteractive
+
+  # Ubuntu 24.04+ and some derivatives ship nodejs 18+ in main/universe.
+  apt-get install -y -qq nodejs 2>/dev/null || true
+  if steamline_node_version_ok; then
+    echo "steamline: Using Node.js $(command -v node) ($(node -v))." >&2
+    return 0
+  fi
+
+  echo "steamline: Adding NodeSource 20.x (distro Node missing or too old)…" >&2
+  if command -v node >/dev/null 2>&1 && ! steamline_node_version_ok; then
+    apt-get remove -y nodejs npm 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+  fi
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
+
+  if steamline_node_version_ok; then
+    echo "steamline: Node.js $(node -v) ready." >&2
+    return 0
+  fi
+
+  echo "steamline: Could not install Node.js automatically." >&2
+  return 0
+}
+
 steamline_try_apk_bootstrap() {
   [[ "$(uname -s)" == "Linux" ]] || return 0
   [[ "${STEAMLINE_SKIP_APT:-0}" == "1" ]] && return 0
@@ -80,10 +129,17 @@ steamline_try_apk_bootstrap() {
   [[ "$(id -u)" == "0" ]] || return 0
   echo "steamline: Installing base packages via apk (bash, tar, curl)…" >&2
   apk add --no-cache bash tar curl ca-certificates || true
+  if [[ "${STEAMLINE_SKIP_NODE_INSTALL:-0}" != "1" ]]; then
+    if ! steamline_node_version_ok; then
+      echo "steamline: Installing Node.js via apk…" >&2
+      apk add --no-cache nodejs npm 2>/dev/null || true
+    fi
+  fi
 }
 
 if [[ "$(uname -s)" == "Linux" ]]; then
   steamline_try_apt_bootstrap
+  steamline_try_apt_install_nodejs
   steamline_try_apk_bootstrap
 fi
 
