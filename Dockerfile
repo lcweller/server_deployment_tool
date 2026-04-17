@@ -32,7 +32,7 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/package-lock.json ./package-lock.json
 RUN npm ci --omit=dev \
   && npm cache clean --force \
-  && node -e "require('server-only'); console.log('[docker] server-only ok')"
+  && test -f node_modules/server-only/package.json
 
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
