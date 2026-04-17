@@ -12,18 +12,25 @@ const hostname = process.env.HOSTNAME ?? "0.0.0.0";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
-await app.prepare();
+async function main() {
+  await app.prepare();
 
-const server = createServer((req, res) => {
-  const parsedUrl = parse(req.url ?? "/", true);
-  void handle(req, res, parsedUrl);
-});
+  const server = createServer((req, res) => {
+    const parsedUrl = parse(req.url ?? "/", true);
+    void handle(req, res, parsedUrl);
+  });
 
-attachAgentWebSocketServer(server);
-attachBrowserTerminalWebSocket(server);
+  attachAgentWebSocketServer(server);
+  attachBrowserTerminalWebSocket(server);
 
-server.listen(port, hostname, () => {
-  console.error(
-    `[steamline] HTTP + WebSockets (agent + terminal) on http://${hostname}:${port}`
-  );
+  server.listen(port, hostname, () => {
+    console.error(
+      `[steamline] HTTP + WebSockets (agent + terminal) on http://${hostname}:${port}`
+    );
+  });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
