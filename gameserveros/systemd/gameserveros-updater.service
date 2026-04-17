@@ -1,0 +1,10 @@
+[Unit]
+Description=GameServerOS package update runner (policy-aware)
+After=network-online.target steamline-agent.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gameserveros/scripts/gameserveros-updater.sh
+StandardOutput=journal
+StandardError=journal

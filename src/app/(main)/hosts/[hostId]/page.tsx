@@ -2,13 +2,17 @@ import { and, count, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DashboardPoller } from "@/components/dashboard-poller";
+import { RealtimeDashboardRefresh } from "@/components/realtime-dashboard-refresh";
 import { DeleteHostButton } from "@/components/delete-host-button";
 import { HostRemovalStatus } from "@/components/host-removal-status";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
 import { InstancePowerControls } from "@/components/instance-power-controls";
+import { HostLinuxRootAccess } from "@/components/host-linux-root-access";
 import { HostSteamSettings } from "@/components/host-steam-settings";
 import { HostResourcesPanel } from "@/components/host-resources-panel";
+import { HostAgentUpdatePanel } from "@/components/host-agent-update-panel";
+import { HostBackupPanel } from "@/components/host-backup-panel";
+import { HostTerminalPanel } from "@/components/host-terminal-panel";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
 import { InstanceLogsPanel } from "@/components/instance-logs-panel";
 import { RequestRebootButton } from "@/components/request-reboot-button";
@@ -104,10 +108,17 @@ export default async function HostDetailPage({
 
   return (
     <>
-      <DashboardPoller intervalMs={8000} />
+      <RealtimeDashboardRefresh />
       <PageHeader
         title={host.name}
-        description="Agent status, live resource usage, and servers on this machine."
+        description={
+          <span>
+            Agent status, live resource usage, and servers on this machine.{" "}
+            <Link className="text-primary underline" href="/docs/management">
+              Host management guide
+            </Link>
+          </span>
+        }
         actions={
           <>
             {host.status === "online" || host.status === "offline" ? (
@@ -200,7 +211,8 @@ export default async function HostDetailPage({
                 <p className="text-xs text-muted-foreground">No heartbeat yet.</p>
               )}
               <p className="text-[11px] leading-snug text-muted-foreground">
-                This page refreshes every ~8s while open. If “Last heartbeat”
+                Live updates use a browser connection to the dashboard; when the agent is
+                connected, changes usually appear within a few seconds. If “Last heartbeat”
                 never changes after the first line, the agent is not reaching the
                 API — check{" "}
                 <code className="rounded bg-muted px-1">~/.steamline/agent.log</code>{" "}
@@ -208,6 +220,11 @@ export default async function HostDetailPage({
                 <code className="rounded bg-muted px-1">APP_PUBLIC_URL</code> is
                 reachable from that machine.
               </p>
+              <HostAgentUpdatePanel
+                hostId={host.id}
+                platformOs={host.platformOs}
+                agentReachable={hostReachable}
+              />
               <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
                 <span className="text-muted-foreground">Created</span>
                 <span>
@@ -279,6 +296,7 @@ export default async function HostDetailPage({
                           className="pb-2"
                         />
                         <InstanceDeployProgress
+                          key={`${inst.id}-${inst.updatedAt.toISOString()}`}
                           instanceId={inst.id}
                           initial={{
                             id: inst.id,
@@ -303,6 +321,16 @@ export default async function HostDetailPage({
             </CardContent>
           </Card>
         </div>
+
+        <HostBackupPanel hostId={host.id} hostReachable={hostReachable} />
+
+        <HostTerminalPanel
+          hostId={host.id}
+          platformOs={host.platformOs ?? null}
+          hostReachable={hostReachable}
+        />
+
+        <HostLinuxRootAccess hostId={host.id} platformOs={host.platformOs} />
 
         <Card className="border-border/80">
           <CardHeader>

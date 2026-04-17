@@ -7,9 +7,9 @@ import {
   integer,
   jsonb,
   pgTable,
-  serial,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -109,7 +109,60 @@ export const hosts = pgTable("hosts", {
    * authenticated agent heartbeat, then cleared. Never logged.
    */
   steamSecretsPending: text("steam_secrets_pending"),
+  /**
+   * AES-GCM blob (base64): Linux root password set at install or after dashboard rotation
+   * (decrypt with STEAMLINE_HOST_STEAM_SECRET / AUTH_SECRET).
+   */
+  linuxRootPasswordEnc: text("linux_root_password_enc"),
+  /** Queued root password change for the agent (cleared on heartbeat delivery). */
+  linuxRootPasswordPendingEnc: text("linux_root_password_pending_enc"),
+  /** SHA-256–style hash of a short pairing code for GameServerOS / dashboard enrollment. */
+  pairingCodeHash: text("pairing_code_hash"),
+  pairingExpiresAt: timestamp("pairing_expires_at", { withTimezone: true }),
   updateMode: text("update_mode").notNull().default("manual"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Audit: remote terminal session open/close (no transcript). */
+/**
+ * GameServerOS first-boot: machine requests a display pairing code + poll token;
+ * user claims the code on the dashboard; installer polls until linked then enrolls.
+ */
+export const gameserverosInstallSessions = pgTable("gameserveros_install_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pairingCodeHash: text("pairing_code_hash").notNull().unique(),
+  pollTokenHash: text("poll_token_hash").notNull().unique(),
+  hostId: uuid("host_id").references(() => hosts.id, { onDelete: "set null" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const hostTerminalSessions = pgTable("host_terminal_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hostId: uuid("host_id")
+    .notNull()
+    .references(() => hosts.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  startedAt: timestamp("started_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+});
+
+/** Audit trail for agent self-update phases (dashboard + operator visibility). */
+export const hostAgentUpdateEvents = pgTable("host_agent_update_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hostId: uuid("host_id")
+    .notNull()
+    .references(() => hosts.id, { onDelete: "cascade" }),
+  phase: text("phase").notNull(),
+  message: text("message"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -170,6 +223,79 @@ export const instanceLogLines = pgTable("instance_log_lines", {
     .defaultNow(),
 });
 
+export const hostBackupDestinations = pgTable("host_backup_destinations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hostId: uuid("host_id")
+    .notNull()
+    .references(() => hosts.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // local | s3 | sftp
+  name: text("name").notNull(),
+  config: jsonb("config")
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const hostBackupPolicies = pgTable("host_backup_policies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hostId: uuid("host_id")
+    .notNull()
+    .references(() => hosts.id, { onDelete: "cascade" }),
+  destinationId: uuid("destination_id")
+    .notNull()
+    .references(() => hostBackupDestinations.id, { onDelete: "cascade" }),
+  /** When set, scheduled backups target this game server instance only. */
+  instanceId: uuid("instance_id").references(() => serverInstances.id, {
+    onDelete: "cascade",
+  }),
+  scheduleMode: text("schedule_mode").notNull().default("manual"),
+  /** daily: `HH:mm` UTC; weekly: `dow:HH:mm` UTC (dow 0=Sunday). */
+  scheduleExpr: text("schedule_expr"),
+  keepLast: integer("keep_last"),
+  keepDays: integer("keep_days"),
+  enabled: boolean("enabled").notNull().default(true),
+  lastScheduledAt: timestamp("last_scheduled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const hostBackupRuns = pgTable("host_backup_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  hostId: uuid("host_id")
+    .notNull()
+    .references(() => hosts.id, { onDelete: "cascade" }),
+  instanceId: uuid("instance_id").references(() => serverInstances.id, {
+    onDelete: "set null",
+  }),
+  destinationId: uuid("destination_id").references(() => hostBackupDestinations.id, {
+    onDelete: "set null",
+  }),
+  kind: text("kind").notNull(), // backup | restore
+  status: text("status").notNull().default("queued"), // queued | running | done | failed
+  phase: text("phase"),
+  message: text("message"),
+  archivePath: text("archive_path"),
+  checksumSha256: text("checksum_sha256"),
+  sizeBytes: integer("size_bytes"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -188,6 +314,54 @@ export const subscriptions = pgTable("subscriptions", {
     .notNull()
     .defaultNow(),
 });
+
+export const userNotifications = pgTable("user_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  severity: text("severity").notNull().default("info"),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  linkHref: text("link_href"),
+  hostId: uuid("host_id").references(() => hosts.id, { onDelete: "set null" }),
+  instanceId: uuid("instance_id").references(() => serverInstances.id, {
+    onDelete: "set null",
+  }),
+  dedupeKey: text("dedupe_key"),
+  occurrenceCount: integer("occurrence_count").notNull().default(1),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const userNotificationSettings = pgTable("user_notification_settings", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  emailEnabled: boolean("email_enabled").notNull().default(false),
+  webhookEnabled: boolean("webhook_enabled").notNull().default(false),
+  resendApiKey: text("resend_api_key"),
+  webhookUrl: text("webhook_url"),
+  webhookSecret: text("webhook_secret"),
+  alertCooldownSec: integer("alert_cooldown_sec").notNull().default(300),
+  crashDedupSec: integer("crash_dedup_sec").notNull().default(600),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const userNotificationEventPrefs = pgTable(
+  "user_notification_event_prefs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    email: boolean("email").notNull().default(true),
+    webhook: boolean("webhook").notNull().default(false),
+  },
+  (t) => [unique("user_notification_event_prefs_user_event").on(t.userId, t.eventType)]
+);
 
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

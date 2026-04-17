@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Bell,
   BookOpen,
   CreditCard,
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-bell";
 import { SidebarLogout } from "@/components/sidebar-logout";
 import {
   Sidebar,
@@ -34,6 +36,7 @@ const nav = [
   { title: "Servers", href: "/servers", icon: Server },
   { title: "Billing", href: "/billing", icon: CreditCard },
   { title: "Settings", href: "/settings", icon: Settings2 },
+  { title: "Alert settings", href: "/settings/notifications", icon: Bell },
 ] as const;
 
 function NavLinks() {
@@ -74,25 +77,30 @@ export function AppSidebar({ userEmail }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="border-b border-sidebar-border/60 pb-3">
-        <Link
-          href="/dashboard"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 outline-none ring-sidebar-ring focus-visible:ring-2"
-        >
-          <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground"
-            aria-hidden
+        <div className="flex items-center gap-1">
+          <Link
+            href="/dashboard"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 outline-none ring-sidebar-ring focus-visible:ring-2"
           >
-            S
-          </span>
-          <div className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
-            <span className="truncate text-sm font-semibold tracking-tight">
-              Steamline
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground"
+              aria-hidden
+            >
+              S
             </span>
-            <span className="truncate text-xs text-sidebar-foreground/65">
-              Game servers
-            </span>
+            <div className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
+              <span className="truncate text-sm font-semibold tracking-tight">
+                Steamline
+              </span>
+              <span className="truncate text-xs text-sidebar-foreground/65">
+                Game servers
+              </span>
+            </div>
+          </Link>
+          <div className="shrink-0 group-data-[collapsible=icon]:hidden">
+            <NotificationBell />
           </div>
-        </Link>
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -111,17 +119,15 @@ export function AppSidebar({ userEmail }: AppSidebarProps) {
         <SidebarMenu>
           <SidebarLogout />
           <SidebarMenuItem>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/docs/getting-started"
               className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               <LifeBuoy className="size-4 shrink-0" aria-hidden />
               <span className="truncate group-data-[collapsible=icon]:hidden">
                 Help & docs
               </span>
-            </a>
+            </Link>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

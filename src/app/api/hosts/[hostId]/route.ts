@@ -6,6 +6,8 @@ import { db } from "@/db";
 import { hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
 import { effectiveHostStatus } from "@/lib/host-presence";
+import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
+import { sendControlToAgent } from "@/server/agent-socket-registry";
 
 type RouteCtx = { params: Promise<{ hostId: string }> };
 
@@ -41,6 +43,9 @@ export async function DELETE(_request: Request, ctx: RouteCtx) {
     .update(hosts)
     .set({ status: "pending_removal" })
     .where(eq(hosts.id, hostId));
+
+  notifyHostOwnerDashboard(auth.user.id, hostId);
+  sendControlToAgent(hostId, { action: "instance_sync" });
 
   return NextResponse.json({
     ok: true,
@@ -84,16 +89,28 @@ export async function GET(_request: Request, ctx: RouteCtx) {
       )
     );
 
-  const { enrollmentTokenHash: _h, machineFingerprint: _mf, ...rest } = row;
+  const {
+    enrollmentTokenHash: _h,
+    machineFingerprint: _mf,
+    pairingCodeHash: _pch,
+    ...rest
+  } = row;
   const status = effectiveHostStatus({
     status: row.status,
     lastSeenAt: row.lastSeenAt,
   });
+  const hasActivePairing =
+    row.status === "pending" &&
+    row.pairingCodeHash != null &&
+    row.pairingExpiresAt != null &&
+    row.pairingExpiresAt.getTime() > Date.now();
+
   return NextResponse.json({
     host: {
       ...rest,
       status,
       awaitingEnrollment: row.status === "pending",
+      hasActivePairing,
       instanceTotal,
       instancesPendingDelete,
     },
@@ -163,6 +180,8 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       steamUsername: parsed.data.steamUsername,
     })
     .where(eq(hosts.id, hostId));
+
+  notifyHostOwnerDashboard(auth.user.id, hostId);
 
   return NextResponse.json({
     ok: true,

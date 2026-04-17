@@ -7,16 +7,13 @@ import { hostApiKeys, hosts } from "@/db/schema";
 
 import { hashSessionToken } from "./session-token";
 
-export async function authenticateAgentApiKey(request: Request) {
-  const auth = request.headers.get("authorization");
-  if (!auth?.startsWith("Bearer ")) {
+export async function authenticateAgentApiKeyFromRawKey(
+  rawKey: string | null | undefined
+) {
+  if (!rawKey?.trim()) {
     return null;
   }
-  const raw = auth.slice(7).trim();
-  if (!raw) {
-    return null;
-  }
-
+  const raw = rawKey.trim();
   const keyHash = hashSessionToken(raw);
   const rows = await db
     .select({ key: hostApiKeys, host: hosts })
@@ -36,4 +33,13 @@ export async function authenticateAgentApiKey(request: Request) {
     .where(eq(hostApiKeys.id, row.key.id));
 
   return { host: row.host, apiKeyId: row.key.id };
+}
+
+export async function authenticateAgentApiKey(request: Request) {
+  const auth = request.headers.get("authorization");
+  if (!auth?.startsWith("Bearer ")) {
+    return null;
+  }
+  const raw = auth.slice(7).trim();
+  return authenticateAgentApiKeyFromRawKey(raw);
 }

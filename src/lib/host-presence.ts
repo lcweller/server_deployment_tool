@@ -3,8 +3,11 @@
  * when the machine stops. The dashboard derives reachability from lastSeenAt.
  */
 
-/** Agent heartbeats about every 30s — allow slack for slow ticks and clock skew. */
-export const HOST_HEARTBEAT_MAX_AGE_MS = 120_000;
+/**
+ * With WebSocket heartbeats every ~2.5s (agent default), the host should flip offline
+ * shortly after the agent stops. Keep a small buffer for TCP hiccups.
+ */
+export const HOST_HEARTBEAT_MAX_AGE_MS = 6_000;
 
 export function isHostHeartbeatFresh(
   lastSeenAt: Date | string | null | undefined

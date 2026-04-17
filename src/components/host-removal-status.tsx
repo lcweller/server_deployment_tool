@@ -2,8 +2,9 @@
 
 import { AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { useHostRealtimeForHost } from "@/lib/realtime/use-host-realtime-events";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -23,46 +24,62 @@ export function HostRemovalStatus({
   const [status, setStatus] = useState(initialStatus);
   const [pendingDelete, setPendingDelete] = useState(instancesPendingDelete);
   const [total, setTotal] = useState(instanceTotal);
+  const syncHost = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/hosts/${hostId}`, { cache: "no-store" });
+      if (res.status === 404) {
+        router.push("/hosts");
+        router.refresh();
+        return;
+      }
+      if (!res.ok) {
+        return;
+      }
+      const j = (await res.json()) as {
+        host?: {
+          status: string;
+          instancesPendingDelete?: number;
+          instanceTotal?: number;
+        };
+      };
+      if (j.host) {
+        setStatus(j.host.status);
+        if (j.host.instancesPendingDelete != null) {
+          setPendingDelete(j.host.instancesPendingDelete);
+        }
+        if (j.host.instanceTotal != null) {
+          setTotal(j.host.instanceTotal);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [hostId, router]);
 
   useEffect(() => {
     if (status !== "pending_removal") {
       return;
     }
-    const tick = async () => {
-      try {
-        const res = await fetch(`/api/hosts/${hostId}`, { cache: "no-store" });
-        if (res.status === 404) {
-          router.push("/hosts");
-          router.refresh();
-          return;
-        }
-        if (!res.ok) {
-          return;
-        }
-        const j = (await res.json()) as {
-          host?: {
-            status: string;
-            instancesPendingDelete?: number;
-            instanceTotal?: number;
-          };
-        };
-        if (j.host) {
-          setStatus(j.host.status);
-          if (j.host.instancesPendingDelete != null) {
-            setPendingDelete(j.host.instancesPendingDelete);
-          }
-          if (j.host.instanceTotal != null) {
-            setTotal(j.host.instanceTotal);
-          }
-        }
-      } catch {
-        /* ignore */
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) {
+        return;
       }
+      void syncHost();
     };
-    const id = window.setInterval(tick, 3500);
-    void tick();
-    return () => window.clearInterval(id);
-  }, [hostId, router, status]);
+    const id = window.setInterval(() => {
+      tick();
+    }, 12_000);
+    tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [status, syncHost]);
+
+  useHostRealtimeForHost(hostId, () => {
+    void syncHost();
+  });
 
   if (status !== "pending_removal") {
     return null;

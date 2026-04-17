@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { hosts } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
 
 type RouteCtx = { params: Promise<{ hostId: string }> };
 
@@ -41,6 +42,8 @@ export async function POST(_request: Request, ctx: RouteCtx) {
     .update(hosts)
     .set({ rebootRequestedAt: new Date() })
     .where(eq(hosts.id, hostId));
+
+  notifyHostOwnerDashboard(auth.user.id, hostId);
 
   return NextResponse.json({
     ok: true,

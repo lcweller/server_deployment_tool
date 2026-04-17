@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import {
+  notifyHostOwnerDashboard,
+  notifyUserServersRealtime,
+} from "@/lib/realtime/notify-dashboard";
 
 type RouteCtx = { params: Promise<{ instanceId: string }> };
 
@@ -45,6 +49,8 @@ export async function POST(_request: Request, ctx: RouteCtx) {
     );
   }
 
+  const hostIdBefore = inst.hostId;
+
   await db
     .delete(serverInstances)
     .where(
@@ -53,6 +59,12 @@ export async function POST(_request: Request, ctx: RouteCtx) {
         eq(serverInstances.userId, auth.user.id)
       )
     );
+
+  if (hostIdBefore) {
+    notifyHostOwnerDashboard(auth.user.id, hostIdBefore);
+  } else {
+    notifyUserServersRealtime(auth.user.id);
+  }
 
   return NextResponse.json({
     ok: true,

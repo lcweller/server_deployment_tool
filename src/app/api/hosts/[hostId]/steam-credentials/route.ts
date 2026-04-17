@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { hosts } from "@/db/schema";
 import { encryptSteamHostSecretsPending } from "@/lib/crypto/steam-host-secrets";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
+import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
 
 type RouteCtx = { params: Promise<{ hostId: string }> };
 
@@ -84,6 +85,8 @@ export async function POST(request: Request, ctx: RouteCtx) {
       steamSecretsPending: encrypted,
     })
     .where(eq(hosts.id, hostId));
+
+  notifyHostOwnerDashboard(auth.user.id, hostId);
 
   return NextResponse.json({
     ok: true,

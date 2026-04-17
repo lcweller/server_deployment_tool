@@ -6,6 +6,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { removeInstancePidFile, tearDownNetworkingForInstance } from "./cleanup";
 import { instanceInstallDir } from "./paths";
 import type { RemoteInstance } from "./provision";
 import {
@@ -139,6 +140,12 @@ export async function processWatchdogQueue(
       await postLogLines(apiBase, bearer, inst.id, [
         `[steamline] watchdog: process ${pid} is not running — automatic restart attempt ${st.failures + 1}/${MAX_FAILURES}…`,
       ]);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await tearDownNetworkingForInstance(inst.id);
+      removeInstancePidFile(inst.id);
     } catch {
       /* ignore */
     }

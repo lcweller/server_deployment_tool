@@ -2,7 +2,7 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 
 import { CreateInstanceForm } from "@/app/(main)/servers/create-instance-form";
-import { DashboardPoller } from "@/components/dashboard-poller";
+import { RealtimeDashboardRefresh } from "@/components/realtime-dashboard-refresh";
 import { DeleteInstanceButton } from "@/components/delete-instance-button";
 import { InstancePowerControls } from "@/components/instance-power-controls";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
@@ -103,7 +103,7 @@ export default async function ServersPage({
 
   return (
     <>
-      <DashboardPoller intervalMs={8000} />
+      <RealtimeDashboardRefresh />
       <PageHeader
         title="Servers"
         description="Deploy from the catalog to an enrolled host: we pick non-conflicting game/query ports per machine, verify them on the host when possible, and show what’s left for you (router, firewall, public IP) under each server."
@@ -302,6 +302,7 @@ export default async function ServersPage({
                         className="pb-3"
                       />
                       <InstanceDeployProgress
+                        key={`${row.id}-${row.updatedAt.toISOString()}`}
                         instanceId={row.id}
                         initial={{
                           id: row.id,

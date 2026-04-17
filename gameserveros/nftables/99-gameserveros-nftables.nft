@@ -1,0 +1,29 @@
+# Default deny; loopback allowed. Agent / steamline firewall tooling adds game ports.
+# Apply: nft -f /etc/nftables.d/99-gameserveros.nft
+flush ruleset
+
+table inet filter {
+  set steamline_allowed_tcp {
+    type inet_service;
+    elements = { 443 }
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    tcp dport @steamline_allowed_tcp accept
+    # Dashboard / agent control plane (outbound initiated — return traffic handled by ct)
+    meta l4proto icmp icmp type echo-request limit rate 5/second accept
+    meta l4proto ipv6-icmp icmpv6 type echo-request limit rate 5/second accept
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+    ct state established,related accept
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}

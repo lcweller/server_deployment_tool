@@ -49,7 +49,6 @@ export function allocateNextPortSet(
   defaults: PortTemplateDefaults
 ): AllocatedPorts {
   const { baseGame, baseQuery, stride } = defaults;
-  const delta = baseQuery - baseGame;
   for (let k = 0; k < 10_000; k++) {
     const game = baseGame + k * stride;
     const query = baseQuery + k * stride;

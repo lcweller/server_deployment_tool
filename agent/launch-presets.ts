@@ -25,6 +25,18 @@ export type LaunchPreset = {
 };
 
 export const LAUNCH_PRESETS: Record<string, LaunchPreset> = {
+  /**
+   * Half-Life Dedicated Server (GoldSrc). Must use `hlds_run` (sets library paths);
+   * running `hlds_amd` / `hlds_i686` directly exits immediately.
+   * Use catalog `defaultLaunchArgs` to switch mod, e.g. `-game cstrike +map de_dust2`.
+   */
+  "90": {
+    label: "Half-Life Dedicated Server (GoldSrc)",
+    afterInstallCmdLinux:
+      "./hlds_run -game valve +ip 0.0.0.0 -port ${STEAMLINE_GAME_PORT} +map crossfire +maxplayers 16",
+    afterInstallCmdWin:
+      "hlds.exe -game valve +ip 0.0.0.0 -port ${STEAMLINE_GAME_PORT} +map crossfire +maxplayers 16",
+  },
   /** Counter-Strike 2 — full client / server files (app_update 730). */
   "730": {
     label: "Counter-Strike 2",

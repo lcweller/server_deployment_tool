@@ -1,0 +1,8 @@
+#cloud-config
+# Optional: attach as nocloud seed on VPS providers. Does not run the GameServerOS
+# first-boot installer — that is triggered by systemd on the image. Keep this
+# minimal so it does not override network or users configured by the installer.
+package_update: false
+package_upgrade: false
+runcmd:
+  - [touch, /var/lib/cloud/seed/nocloud-net-gameserveros.ok]

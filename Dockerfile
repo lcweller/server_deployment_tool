@@ -10,7 +10,6 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Reconcile node_modules with final package files (devDependencies needed for `next build` typecheck).
 RUN npm ci
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -27,16 +26,22 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
+# Full app: custom server.ts (WebSocket) requires source + node_modules (not standalone bundle).
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/package-lock.json ./package-lock.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/scripts/run-migrations.cjs ./scripts/run-migrations.cjs
 COPY --from=builder /app/scripts/seed-catalog-if-empty.cjs ./scripts/seed-catalog-if-empty.cjs
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
+COPY --from=builder /app/src ./src
 
-# Next standalone trace omits postgres/drizzle — add for runtime migrations.
-RUN npm install postgres@3.4.9 drizzle-orm@0.45.2 --omit=dev --no-save --ignore-scripts \
+RUN npm prune --omit=dev \
   && npm cache clean --force
 
 RUN chmod +x scripts/docker-entrypoint.sh \

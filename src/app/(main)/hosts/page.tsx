@@ -2,6 +2,8 @@ import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 
 import { AddHostWizard } from "@/app/(main)/hosts/add-host-wizard";
+import { LinkGameServerOsSheet } from "@/components/link-gameserveros-sheet";
+import { RealtimeDashboardRefresh } from "@/components/realtime-dashboard-refresh";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -45,10 +47,16 @@ export default async function HostsPage() {
 
   return (
     <>
+      <RealtimeDashboardRefresh />
       <PageHeader
         title="Hosts"
         description="Pair machines with the Steamline agent. Add a host, run one command on the machine, then open it for details."
-        actions={<AddHostWizard />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <AddHostWizard />
+            <LinkGameServerOsSheet />
+          </div>
+        }
       />
       <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
         <section className="space-y-3">

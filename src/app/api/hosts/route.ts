@@ -7,6 +7,7 @@ import { hosts } from "@/db/schema";
 import { generateSessionToken, hashSessionToken } from "@/lib/auth/session-token";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
 import { effectiveHostStatus } from "@/lib/host-presence";
+import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
 
 const platformOsSchema = z.enum(["linux", "macos", "windows"]);
 
@@ -31,6 +32,7 @@ export async function GET() {
     ({
       enrollmentTokenHash: _hash,
       machineFingerprint: _mf,
+      pairingCodeHash: _pch,
       ...rest
     }) => ({
       ...rest,
@@ -85,6 +87,8 @@ export async function POST(request: Request) {
       status: hosts.status,
       createdAt: hosts.createdAt,
     });
+
+  notifyHostOwnerDashboard(auth.user.id, host.id);
 
   return NextResponse.json({
     host,

@@ -1,0 +1,11 @@
+#include <tunables/global>
+
+# Unrestricted profile for steamline-agent — full host management (SteamCMD, firewall, backups, PTY).
+profile steamline-agent flags=(attach_disconnected) {
+  file,
+  network,
+  capability,
+  signal,
+  ptrace,
+  mount,
+}

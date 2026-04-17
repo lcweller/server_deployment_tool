@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly audit digest for agent pickup (future heartbeat field)
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

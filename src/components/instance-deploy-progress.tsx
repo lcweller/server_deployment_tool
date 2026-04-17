@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DeploymentPlaybook } from "@/components/deployment-playbook";
 import type { AllocatedPorts } from "@/lib/allocated-ports";
 import type { HostMetricsSnapshot } from "@/lib/host-metrics";
 import type { LogInsights } from "@/lib/log-insights";
 import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
+import { useHostRealtimeEvents } from "@/lib/realtime/use-host-realtime-events";
 import { cn } from "@/lib/utils";
 
 type InstancePayload = {
@@ -183,6 +184,10 @@ function explain(
   };
 }
 
+/**
+ * When rendered in a list, set a React key from instance id + `updatedAt` so
+ * `router.refresh()` (e.g. after SSE) remounts with fresh `initial` props.
+ */
 export function InstanceDeployProgress({ instanceId, initial }: Props) {
   const [data, setData] = useState<InstancePayload>(initial);
 
@@ -199,42 +204,51 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
   const shouldPoll =
     ACTIVE.has(data.status) || data.status === "pending_delete";
 
+  const tick = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/instances/${instanceId}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        return;
+      }
+      const json = (await res.json()) as { instance?: InstancePayload };
+      if (json.instance) {
+        const inst = json.instance as InstancePayload & {
+          updatedAt?: string;
+        };
+        setData((prev) => ({
+          ...inst,
+          updatedAt: inst.updatedAt ?? prev.updatedAt,
+        }));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [instanceId]);
+
   useEffect(() => {
     let cancelled = false;
-    const tick = async () => {
-      try {
-        const res = await fetch(`/api/instances/${instanceId}`, {
-          cache: "no-store",
-        });
-        if (!res.ok || cancelled) {
-          return;
-        }
-        const json = (await res.json()) as { instance?: InstancePayload };
-        if (json.instance && !cancelled) {
-          const inst = json.instance as InstancePayload & {
-            updatedAt?: string;
-          };
-          setData((prev) => ({
-            ...inst,
-            updatedAt: inst.updatedAt ?? prev.updatedAt,
-          }));
-        }
-      } catch {
-        /* ignore */
-      }
-    };
     void tick();
     if (!shouldPoll) {
       return () => {
         cancelled = true;
       };
     }
-    const fast = window.setInterval(tick, 2500);
+    const fast = window.setInterval(() => {
+      if (!cancelled) {
+        void tick();
+      }
+    }, 8_000);
     return () => {
       cancelled = true;
       window.clearInterval(fast);
     };
-  }, [instanceId, shouldPoll]);
+  }, [tick, shouldPoll]);
+
+  useHostRealtimeEvents(() => {
+    void tick();
+  });
 
   const failed = data.status === "failed";
 

@@ -13,59 +13,111 @@ type Props = {
   className?: string;
 };
 
-export function InstanceLogsPanel({ instanceId, className }: Props) {
+const MAX_RECONNECT_MS = 30_000;
+
+/** Remount when `instanceId` changes (`key`) so log state resets without setState in an effect. */
+function InstanceLogsInner({
+  instanceId,
+  className,
+}: {
+  instanceId: string;
+  className?: string;
+}) {
   const [lines, setLines] = useState<LogRow[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seen = useRef<Set<number>>(new Set());
+  const lastLogIdRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    seen.current.clear();
-    setLines([]);
-    setError(null);
-    setConnected(false);
+    let cancelled = false;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
 
-    const url = `/api/instances/${instanceId}/logs/stream`;
-    const es = new EventSource(url);
+    const clearReconnect = () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
 
-    es.addEventListener("ready", () => {
-      setConnected(true);
-    });
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+      clearReconnect();
+      es?.close();
 
-    es.addEventListener("log", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as {
-          id: number;
-          line: string;
-          at: string;
-        };
-        if (seen.current.has(data.id)) {
+      const after = lastLogIdRef.current;
+      const url = `/api/instances/${instanceId}/logs/stream?after=${after}`;
+      es = new EventSource(url);
+
+      es.addEventListener("ready", () => {
+        attempt = 0;
+        setConnected(true);
+        setError(null);
+      });
+
+      es.addEventListener("log", (ev) => {
+        try {
+          const raw = JSON.parse((ev as MessageEvent).data) as {
+            id: number;
+            line: string;
+            at: string | Date;
+          };
+          if (seen.current.has(raw.id)) {
+            return;
+          }
+          seen.current.add(raw.id);
+          lastLogIdRef.current = Math.max(lastLogIdRef.current, raw.id);
+          const data: LogRow = {
+            id: raw.id,
+            line: raw.line,
+            at:
+              typeof raw.at === "string"
+                ? raw.at
+                : new Date(raw.at).toISOString(),
+          };
+          setLines((prev) => {
+            const next = [...prev, data];
+            if (next.length > 8000) {
+              return next.slice(-8000);
+            }
+            return next;
+          });
+        } catch {
+          /* ignore */
+        }
+      });
+
+      es.onerror = () => {
+        es?.close();
+        if (cancelled) {
           return;
         }
-        seen.current.add(data.id);
-        setLines((prev) => {
-          const next = [...prev, data];
-          if (next.length > 8000) {
-            return next.slice(-8000);
-          }
-          return next;
-        });
-      } catch {
-        /* ignore */
-      }
-    });
+        setConnected(false);
+        attempt += 1;
+        const delay = Math.min(
+          MAX_RECONNECT_MS,
+          1000 * 2 ** Math.min(attempt - 1, 6)
+        );
+        if (attempt >= 2) {
+          setError("Log stream interrupted — reconnecting…");
+        }
+        reconnectTimer = setTimeout(connect, delay);
+      };
+    };
 
-    es.addEventListener("error", () => {
-      if (es.readyState === EventSource.CLOSED) {
-        setError("Log stream closed. Refresh the page to reconnect.");
-      }
-    });
+    connect();
 
     return () => {
-      es.close();
+      cancelled = true;
+      clearReconnect();
+      es?.close();
     };
   }, [instanceId]);
 
@@ -119,8 +171,9 @@ export function InstanceLogsPanel({ instanceId, className }: Props) {
               Copy all
             </Button>
             <span className="text-[11px] text-muted-foreground">
-              Includes SteamCMD output and <code className="rounded bg-muted px-0.5">diag:</code>{" "}
-              lines for support.
+              Includes SteamCMD output and{" "}
+              <code className="rounded bg-muted px-0.5">diag:</code> lines for
+              support.
             </span>
           </div>
           <pre
@@ -146,5 +199,11 @@ export function InstanceLogsPanel({ instanceId, className }: Props) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function InstanceLogsPanel({ instanceId, className }: Props) {
+  return (
+    <InstanceLogsInner key={instanceId} instanceId={instanceId} className={className} />
   );
 }

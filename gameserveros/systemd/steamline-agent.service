@@ -1,0 +1,28 @@
+[Unit]
+Description=Steamline game host agent (GameServerOS)
+Documentation=https://github.com/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=NODE_ENV=production
+# Populated by installer from /etc/gameserveros/platform-url + enroll output
+EnvironmentFile=-/root/.steamline/steamline-agent.env
+EnvironmentFile=-/etc/gameserveros/agent.env
+WorkingDirectory=/opt/steamline
+ExecStart=/bin/sh -c 'exec /usr/bin/node /opt/steamline/steamline-agent.cjs run "$STEAMLINE_PLATFORM_URL"'
+Restart=on-failure
+RestartSec=5
+# Escalating-ish cap: systemd backs off when StartLimitHit
+StartLimitIntervalSec=400
+StartLimitBurst=8
+# Hardening
+NoNewPrivileges=false
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=steamline-agent
+
+[Install]
+WantedBy=multi-user.target

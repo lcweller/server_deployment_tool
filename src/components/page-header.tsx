@@ -5,7 +5,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 
 type PageHeaderProps = {
   title: string;
-  description?: string;
+  description?: ReactNode;
   /** Optional toolbar (e.g. back link, primary action). */
   actions?: ReactNode;
 };
@@ -23,7 +23,7 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
             {title}
           </h1>
           {description ? (
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <div className="text-sm text-muted-foreground">{description}</div>
           ) : null}
         </div>
       </div>

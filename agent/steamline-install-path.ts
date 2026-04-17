@@ -1,4 +1,3 @@
-import * as fs from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
 

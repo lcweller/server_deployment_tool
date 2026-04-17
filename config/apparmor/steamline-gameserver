@@ -1,0 +1,20 @@
+#include <tunables/global>
+
+# Confined game server processes — data under Steamline dirs, SteamCMD, and assigned IPv4 ports only.
+profile steamline-gameserver flags=(attach_disconnected) {
+  /usr/bin/** mr,
+  /bin/** mr,
+  /lib/** mr,
+  /lib64/** mr,
+  /usr/lib/** mr,
+
+  owner @{HOME}/.steamline/** rwk,
+  owner @{HOME}/steamline-data/** rwk,
+  /var/lib/steamline/** rwk,
+  /opt/steamcmd/** rwk,
+  owner /tmp/** rw,
+
+  network inet tcp,
+  network inet udp,
+  deny network inet6,
+}

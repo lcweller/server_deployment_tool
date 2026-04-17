@@ -12,7 +12,7 @@ Web control plane for **Steam dedicated servers**: sign up, verify email, pair *
 - **Auth:** bcrypt + DB sessions + **Cloudflare Turnstile** + **SMTP** verification mail
 - **Agent:** CLI in `agent/cli.ts` — enroll, heartbeat, **run** = deletion queue + **start/stop** power lifecycle + **watchdog** (auto-restart dead dedicated processes with backoff, status **`recovering`**) + host teardown + provision (downloads **SteamCMD** on first use; stub only if `STEAMLINE_PROVISION_STUB=1`). Disable the watchdog with **`STEAMLINE_WATCHDOG_DISABLE=1`** on the host if needed. Production builds bundle a single **`steamline-agent.cjs`** (see `npm run agent:bundle`) served from the dashboard so hosts can **`curl …/install-agent.sh | bash`** without cloning the repo.
 - **Billing:** Stripe Checkout + Customer Portal + webhooks
-- **Jobs:** `GET /api/cron/catalog-ingest` and `GET /api/cron/prune-logs` (Bearer `CRON_SECRET`)
+- **Jobs:** `GET /api/cron/catalog-ingest`, `GET /api/cron/prune-logs`, `GET /api/cron/prune-pairing`, `GET /api/cron/prune-agent-update-events`, `GET /api/cron/prune-backup-runs` (Bearer `CRON_SECRET`)
 
 ## Quick start
 
@@ -81,7 +81,15 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 
 curl -s -H "Authorization: Bearer $CRON_SECRET" \
   "$APP_PUBLIC_URL/api/cron/prune-logs"
+
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  "$APP_PUBLIC_URL/api/cron/prune-agent-update-events"
+
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  "$APP_PUBLIC_URL/api/cron/prune-backup-runs"
 ```
+
+Backup history retention is controlled with `BACKUP_RUN_RETENTION_DAYS` (default `365`).
 
 ## Stripe
 
@@ -127,7 +135,11 @@ Optional: `STEAMLINE_STEAMCMD_PATH` to use an existing SteamCMD binary; `STEAMLI
 
 **Licensed SteamCMD:** on the host detail page use **Push to host** — credentials are encrypted briefly on the server, delivered once to the enrolled agent over HTTPS, then removed from the database while the agent writes `~/.steamline/steamline-agent.env`. Advanced operators can still set `STEAMLINE_STEAM_*` manually or run `steam-login`. Configure `STEAMLINE_HOST_STEAM_SECRET` (or a long `AUTH_SECRET`) for the encryption key.
 
-**Dedicated process (optional):** After a successful SteamCMD install, set **`STEAMLINE_AFTER_INSTALL_CMD`** to a shell command run in the instance install directory (e.g. start your dedicated server). The agent spawns it detached and writes **`steamline.pid`** so dashboard **Stop** / **Delete** can stop the process (Delete also removes files).
+**Auto-heal (bounded):** On failed **SteamCMD** runs, the agent scans output for common failures (missing **32-bit loader / libc**, **permission denied** on scripts) and may **install Debian/Ubuntu packages** (when root), **fix `hlds_run` / `*.sh` execute bits**, then **retry SteamCMD once**. **`STEAMLINE_SELF_HEAL_DISABLE=1`** turns this off; **`STEAMLINE_AUTO_RETRY_STEAMCMD=0`** disables the retry. Many game issues (wrong map, game config, auth) still need catalog commands or manual fixes — the agent logs clear hints when it cannot repair automatically.
+
+**Linux firewall:** If **`firewall-cmd`** is missing and the agent runs as **root** on **apt-based** systems, it can **install `firewalld`** and start it, then open your game/query ports (same as before). **Containers (Docker):** auto-install is **skipped** by default — publish ports on the host; set **`STEAMLINE_ALLOW_FIREWALL_IN_CONTAINER=1`** only if you run systemd inside the container. **`STEAMLINE_SKIP_AUTO_FIREWALL_STACK=1`** disables package install entirely.
+
+**Dedicated process (optional):** After a successful SteamCMD install, set **`STEAMLINE_AFTER_INSTALL_CMD`** to a shell command run in the instance install directory (e.g. start your dedicated server). The agent spawns it detached and writes **`steamline.pid`** so dashboard **Stop** / **Delete** can stop the process (Delete also removes files). Built-in presets include **GoldSrc HLDS (Steam App 90)** via `./hlds_run` (not the raw `hlds_*` binaries). Override the mod/map with catalog **`defaultLaunchArgs`**, e.g. `-game cstrike +map de_dust2`.
 
 **Deletion:** In the UI, **Delete** on a server sets **`pending_delete`**; the agent removes files, calls **`purge-complete`**, and the row disappears. **Remove host** sets instances to **`pending_delete`** and the host to **`pending_removal`**; after the agent wipes data it runs **`STEAMLINE_UNINSTALL_SCRIPT`** (if set), deletes **`steamline-data`** (or **`STEAMLINE_DATA_ROOT`**), then calls **`removal-complete`** so API keys and the host row are removed.
 
@@ -146,6 +158,7 @@ Apply DB migration **`0004_instance_provision_fields`** (`npm run db:migrate`).
 | `POST /api/v1/agent/host/removal-complete` | Bearer — after uninstall + data wipe; removes host + API keys when status is `pending_removal` and no instances remain |
 | `POST /api/v1/agent/instances/:instanceId/ack` | Bearer — `draft` → `queued` |
 | `POST /api/v1/agent/instances/:instanceId/logs` | Bearer; body `{ "lines": ["…"] }` |
+| `POST /api/v1/agent/backup-schedule` | Bearer — returns due scheduled backup runs for this host |
 | `GET /api/instances/:instanceId/logs/stream` | Browser session (owner) — SSE |
 
 Control plane: `GET/POST /api/instances` (session) — create/list game server rows for your account.

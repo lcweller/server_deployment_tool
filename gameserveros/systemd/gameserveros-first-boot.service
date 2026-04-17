@@ -1,0 +1,15 @@
+[Unit]
+Description=GameServerOS first-boot installer (tarball / preseeded disk only — not live ISO)
+After=network-online.target
+ConditionPathExists=!/etc/gameserveros/install-done
+ConditionKernelCommandLine=!boot=live
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gameserveros/installer/install-main.sh
+StandardOutput=journal
+StandardError=journal
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

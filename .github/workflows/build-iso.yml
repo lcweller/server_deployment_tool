@@ -1,0 +1,47 @@
+name: Build GameServerOS ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version for artifact name"
+        required: false
+        default: "0.1.0"
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            debootstrap \
+            xorriso \
+            squashfs-tools \
+            grub-common \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            mtools \
+            dosfstools
+
+      - name: Bundle agent (if not committed)
+        run: npm ci && npm run agent:bundle
+
+      - name: Build hybrid ISO
+        env:
+          GAMESERVEROS_VERSION: ${{ github.event.inputs.version || '0.1.0' }}
+        run: |
+          chmod +x gameserveros/build/build-iso.sh gameserveros/build/stage-vendor.sh
+          sudo bash gameserveros/build/build-iso.sh
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameserveros-iso-${{ github.event.inputs.version || '0.1.0' }}
+          path: |
+            dist/gameserveros-*.iso
+            dist/gameserveros-*.iso.sha256

@@ -6,6 +6,8 @@ import { db } from "@/db";
 import { catalogEntries, hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
 import { isHostHeartbeatFresh } from "@/lib/host-presence";
+import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
+import { sendControlToAgent } from "@/server/agent-socket-registry";
 import {
   allocateNextPortSet,
   collectUsedPorts,
@@ -148,6 +150,12 @@ export async function POST(request: Request) {
       updatedAt: serverInstances.updatedAt,
       allocatedPorts: serverInstances.allocatedPorts,
     });
+
+  notifyHostOwnerDashboard(auth.user.id, parsed.data.hostId);
+  sendControlToAgent(parsed.data.hostId, {
+    action: "instance_deploy",
+    instanceId: instance.id,
+  });
 
   return NextResponse.json({ instance });
 }

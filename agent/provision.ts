@@ -4,6 +4,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as net from "node:net";
 
 import { guessAutoLaunchPlan, type AutoLaunchPlan } from "./auto-launch";
 import {
@@ -31,6 +32,10 @@ import {
   tearDownNetworkingForInstance,
 } from "./cleanup";
 import { resetWatchdogState } from "./watchdog-state";
+import {
+  applyLogSelfHealFromLines,
+  quickInstallDirRemediations,
+} from "./log-self-heal";
 
 export type RemoteInstance = {
   id: string;
@@ -48,6 +53,28 @@ export type RemoteInstance = {
 };
 
 const LOG_CHUNK = 450;
+/** Return true if pushed on WebSocket; false to fall back to REST (e.g. reconnecting). */
+let wsUpstream:
+  | ((o: {
+      type: "instance_status" | "instance_logs";
+      instanceId: string;
+      body?: Record<string, unknown>;
+      lines?: string[];
+    }) => boolean)
+  | null = null;
+
+export function setInstanceRealtimeUpstream(
+  fn:
+    | ((o: {
+        type: "instance_status" | "instance_logs";
+        instanceId: string;
+        body?: Record<string, unknown>;
+        lines?: string[];
+      }) => boolean)
+    | null
+): void {
+  wsUpstream = fn;
+}
 
 function base(baseUrl: string) {
   return baseUrl.replace(/\/$/, "");
@@ -76,6 +103,12 @@ export async function postInstanceStatus(
   instanceId: string,
   body: Record<string, unknown>
 ): Promise<void> {
+  if (wsUpstream) {
+    const sent = wsUpstream({ type: "instance_status", instanceId, body });
+    if (sent) {
+      return;
+    }
+  }
   const url = `${base(apiBase)}/api/v1/agent/instances/${instanceId}/status`;
   const r = await postJson(url, {
     method: "POST",
@@ -93,6 +126,12 @@ export async function postInstanceLogs(
   instanceId: string,
   lines: string[]
 ): Promise<void> {
+  if (wsUpstream) {
+    const sent = wsUpstream({ type: "instance_logs", instanceId, lines });
+    if (sent) {
+      return;
+    }
+  }
   const url = `${base(apiBase)}/api/v1/agent/instances/${instanceId}/logs`;
   const r = await postJson(url, {
     method: "POST",
@@ -131,6 +170,24 @@ function expandEnvPlaceholders(cmd: string, env: NodeJS.ProcessEnv): string {
 type StartPlan =
   | { source: "env" | "catalog" | "preset"; kind: "shell"; cmd: string }
   | { source: "auto"; plan: AutoLaunchPlan };
+
+function waitForTcpListening(
+  port: number,
+  timeoutMs: number
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const done = (ok: boolean) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => done(true));
+    socket.once("timeout", () => done(false));
+    socket.once("error", () => done(false));
+    socket.connect(port, "127.0.0.1");
+  });
+}
 
 /**
  * Host env → catalog `afterInstallCmd` → built-in Steam App ID preset →
@@ -450,6 +507,11 @@ export async function runDedicatedLaunchPhase(
     ]);
   }
 
+  const quickHeal = quickInstallDirRemediations(dir);
+  if (quickHeal.length > 0) {
+    await postLogLines(apiBase, bearer, inst.id, quickHeal);
+  }
+
   let resolvedPorts = inst.allocatedPorts ?? null;
   try {
     const probe = await resolvePortsWithLocalProbe(
@@ -478,30 +540,6 @@ export async function runDedicatedLaunchPhase(
   }
 
   const portEnv = formatPortEnv(inst, dir, resolvedPorts ?? {});
-  const fwLines = applyWindowsFirewallForPorts(inst.id, dir, resolvedPorts ?? {});
-  if (fwLines.length > 0) {
-    await postLogLines(apiBase, bearer, inst.id, [
-      "[steamline] Windows Firewall (best effort — agent may need Administrator):",
-      ...fwLines,
-    ]);
-  }
-
-  const linuxFw = applyLinuxFirewallForPorts(dir, resolvedPorts ?? {});
-  if (linuxFw.length > 0) {
-    await postLogLines(apiBase, bearer, inst.id, [
-      "[steamline] Linux host firewall (firewalld, best effort):",
-      ...linuxFw,
-    ]);
-  }
-
-  const upnpLogs = await tryUpnpPortForward(inst.id, dir, resolvedPorts ?? {});
-  if (upnpLogs.length > 0) {
-    await postLogLines(apiBase, bearer, inst.id, [
-      "[steamline] Router UPnP (best effort — IGD must be enabled on the router):",
-      ...upnpLogs,
-    ]);
-  }
-
   const startPlan = resolveStartPlan(inst, dir);
   let dedicatedStarted = false;
   if (startPlan) {
@@ -547,6 +585,35 @@ export async function runDedicatedLaunchPhase(
   }
 
   if (dedicatedStarted) {
+    if (typeof resolvedPorts?.rcon === "number") {
+      const listening = await waitForTcpListening(resolvedPorts.rcon, 2000);
+      await postLogLines(apiBase, bearer, inst.id, [
+        listening
+          ? `[steamline] Listening check passed on tcp/${resolvedPorts.rcon} (RCON).`
+          : `[steamline] Listening check did not observe tcp/${resolvedPorts.rcon} within 2s; continuing with running-state policy.`,
+      ]);
+    }
+    const fwLines = applyWindowsFirewallForPorts(inst.id, dir, resolvedPorts ?? {});
+    if (fwLines.length > 0) {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] Windows Firewall (best effort — agent may need Administrator):",
+        ...fwLines,
+      ]);
+    }
+    const linuxFw = applyLinuxFirewallForPorts(dir, resolvedPorts ?? {});
+    if (linuxFw.length > 0) {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] Linux firewall update queued; nftables reconcile loop owns final state.",
+        ...linuxFw,
+      ]);
+    }
+    const upnpLogs = await tryUpnpPortForward(inst.id, dir, resolvedPorts ?? {});
+    if (upnpLogs.length > 0) {
+      await postLogLines(apiBase, bearer, inst.id, [
+        "[steamline] Router UPnP (best effort — IGD must be enabled on the router):",
+        ...upnpLogs,
+      ]);
+    }
     resetWatchdogState(inst.id);
   }
 
@@ -735,36 +802,70 @@ export async function provisionInstance(
       `[steamline] Starting SteamCMD (app_update ${inst.steamAppId}). Install output streams to this log every few seconds — first download can still take many minutes.`,
     ]);
 
-    const { code, allLines } = await runSteamCmdWithCapture(
-      launch,
-      inst.steamAppId,
-      dir,
-      loginPlan,
-      { apiBase, bearer, instanceId: inst.id }
-    );
+    let steamCmdCode = 1;
+    let allLines: string[] = [];
+    let steamCmdRetried = false;
 
-    const nonEmpty = allLines.filter((l) => l.length > 0);
+    for (;;) {
+      const result = await runSteamCmdWithCapture(
+        launch,
+        inst.steamAppId,
+        dir,
+        loginPlan,
+        { apiBase, bearer, instanceId: inst.id }
+      );
+      steamCmdCode = result.code;
+      allLines = result.allLines;
 
-    if (code === 0) {
-      await postLogLines(apiBase, bearer, inst.id, [
-        "[steamline] SteamCMD finished successfully (exit 0). Raw lines above were streamed during the run.",
-      ]);
-    } else {
+      const nonEmpty = allLines.filter((l) => l.length > 0);
+
+      if (steamCmdCode === 0) {
+        await postLogLines(apiBase, bearer, inst.id, [
+          "[steamline] SteamCMD finished successfully (exit 0). Raw lines above were streamed during the run.",
+        ]);
+        break;
+      }
+
       const body =
         nonEmpty.length > 0
           ? nonEmpty
           : ["(no stdout/stderr captured — check agent process permissions and PATH)"];
       await postLogLines(apiBase, bearer, inst.id, [
-        `[steamline] SteamCMD exited with code ${code}. Full output:`,
+        `[steamline] SteamCMD exited with code ${steamCmdCode}. Full output:`,
         ...body,
       ]);
       await postLogLines(apiBase, bearer, inst.id, [
         "[steamline] --- post-failure diagnostics ---",
         ...collectSteamCmdDiagnostics(launch),
       ]);
+
+      const heal = await applyLogSelfHealFromLines(
+        nonEmpty.length > 0 ? nonEmpty : allLines,
+        "steamcmd",
+        {
+          apiBase,
+          bearer,
+          instanceId: inst.id,
+          installDir: dir,
+          steamcmdDir: launch.steamcmdDir,
+          steamAppId: inst.steamAppId,
+        }
+      );
+      if (heal.logLines.length > 0) {
+        await postLogLines(apiBase, bearer, inst.id, heal.logLines);
+      }
+
+      if (heal.shouldRetrySteamCmd && !steamCmdRetried) {
+        steamCmdRetried = true;
+        await postLogLines(apiBase, bearer, inst.id, [
+          "[steamline] auto-heal: retrying SteamCMD once after host remediation…",
+        ]);
+        continue;
+      }
+      break;
     }
 
-    if (code === 0) {
+    if (steamCmdCode === 0) {
       const { dedicatedStarted, resolvedPorts } = await runDedicatedLaunchPhase(
         apiBase,
         bearer,
@@ -784,12 +885,12 @@ export async function provisionInstance(
       await postInstanceStatus(apiBase, bearer, inst.id, statusBody);
     } else {
       const hint =
-        code === 127
+        steamCmdCode === 127
           ? ' If logs show steamcmd.sh + "cannot execute: required file not found" for linux32/steamcmd, the 32-bit ELF loader is missing (usually /lib/ld-linux.so.2). As root: apt-get install -y libc6-i386 (after dpkg --add-architecture i386). Not a bash problem.'
           : "";
       await postInstanceStatus(apiBase, bearer, inst.id, {
         status: "failed",
-        message: `SteamCMD exited with code ${code}.${hint} See instance logs below for full SteamCMD output and diagnostics.`,
+        message: `SteamCMD exited with code ${steamCmdCode}.${hint} See instance logs below for full SteamCMD output and diagnostics.`,
       });
     }
   } catch (e) {

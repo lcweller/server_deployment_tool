@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { hostApiKeys, hosts, serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
+import { notifyUserServersRealtime } from "@/lib/realtime/notify-dashboard";
 
 /**
  * Agent finished wiping the machine — remove host and API keys (instances must be gone).
@@ -44,6 +45,8 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+
+  notifyUserServersRealtime(h.userId);
 
   await db.delete(hostApiKeys).where(eq(hostApiKeys.hostId, hostId));
   await db.delete(hosts).where(eq(hosts.id, hostId));

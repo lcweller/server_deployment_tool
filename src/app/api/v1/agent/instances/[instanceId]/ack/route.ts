@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
+import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
 
 type RouteCtx = { params: Promise<{ instanceId: string }> };
 
@@ -50,6 +51,8 @@ export async function POST(request: Request, ctx: RouteCtx) {
         eq(serverInstances.hostId, agent.host.id)
       )
     );
+
+  notifyHostOwnerDashboard(agent.host.userId, agent.host.id);
 
   return NextResponse.json({
     ok: true,

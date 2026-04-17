@@ -1,9 +1,10 @@
 "use client";
 
-import { CheckCircle2, Copy, Loader2, Monitor, Server } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, RefreshCw, Server } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import QRCode from "react-qr-code";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { HOSTED_DASHBOARD_PUBLIC_URL } from "@/lib/hosted-dashboard-url";
+import { useHostRealtimeForHost } from "@/lib/realtime/use-host-realtime-events";
 import { cn } from "@/lib/utils";
 
 export type PlatformOs = "linux" | "macos" | "windows";
@@ -61,6 +63,11 @@ function buildEnrollShellCommand(baseUrl: string, token: string): string {
   return `curl -fsSL "${b}/install-agent.sh" | bash -s -- "${b}" "${token}"`;
 }
 
+function buildPairingShellCommand(baseUrl: string, code: string): string {
+  const b = baseUrl.replace(/\/$/, "");
+  return `curl -fsSL "${b}/install-agent.sh" | bash -s -- "${b}" --pairing-code "${code}"`;
+}
+
 export function AddHostWizard() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -72,6 +79,10 @@ export function AddHostWizard() {
 
   const [createdHostId, setCreatedHostId] = useState<string | null>(null);
   const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
+  const [pairingBusy, setPairingBusy] = useState(false);
+  const [pairingError, setPairingError] = useState<string | null>(null);
   const [enrolled, setEnrolled] = useState(false);
   const [pollTimedOut, setPollTimedOut] = useState(false);
   /** Resolved after GET /api/config/dashboard-url — never use raw LAN origin for remote hosts when APP_PUBLIC_URL is set. */
@@ -88,6 +99,10 @@ export function AddHostWizard() {
     setPending(false);
     setCreatedHostId(null);
     setEnrollmentToken(null);
+    setPairingCode(null);
+    setPairingExpiresAt(null);
+    setPairingBusy(false);
+    setPairingError(null);
     setEnrolled(false);
     setPollTimedOut(false);
     setInstallBaseUrl(null);
@@ -101,6 +116,42 @@ export function AddHostWizard() {
       reset();
     }
   }, [open, reset]);
+
+  async function requestPairingCode(hostId: string) {
+    setPairingBusy(true);
+    setPairingError(null);
+    try {
+      const pr = await fetch(`/api/hosts/${hostId}/pairing-code`, {
+        method: "POST",
+      });
+      const pj = (await pr.json()) as {
+        pairingCode?: string;
+        expiresAt?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!pr.ok) {
+        setPairingCode(null);
+        setPairingExpiresAt(null);
+        setPairingError(
+          pj.message ??
+            pj.error ??
+            "Could not create a pairing code. You can still use the advanced install command."
+        );
+        return;
+      }
+      if (pj.pairingCode && pj.expiresAt) {
+        setPairingCode(pj.pairingCode);
+        setPairingExpiresAt(pj.expiresAt);
+      }
+    } catch {
+      setPairingError(
+        "Could not create a pairing code. You can still use the advanced install command."
+      );
+    } finally {
+      setPairingBusy(false);
+    }
+  }
 
   async function createHost() {
     setError(null);
@@ -123,6 +174,7 @@ export function AddHostWizard() {
       if (data.host?.id && data.enrollmentToken) {
         setCreatedHostId(data.host.id);
         setEnrollmentToken(data.enrollmentToken);
+        await requestPairingCode(data.host.id);
         setStep(3);
       }
     } catch {
@@ -132,21 +184,19 @@ export function AddHostWizard() {
     }
   }
 
-  useEffect(() => {
-    if (step !== 3 || !createdHostId || enrolled) {
+  async function regeneratePairingCode() {
+    if (!createdHostId) {
       return;
     }
-    let attempts = 0;
-    const maxAttempts = 180;
-    const t = window.setInterval(async () => {
-      attempts += 1;
-      if (attempts > maxAttempts) {
-        setPollTimedOut(true);
-        window.clearInterval(t);
-        return;
-      }
+    await requestPairingCode(createdHostId);
+  }
+
+  const checkEnrollmentStatus = useCallback(
+    async (id: string): Promise<void> => {
       try {
-        const res = await fetch(`/api/hosts/${createdHostId}`);
+        const res = await fetch(`/api/hosts/${id}`, {
+          cache: "no-store",
+        });
         if (!res.ok) {
           return;
         }
@@ -155,15 +205,51 @@ export function AddHostWizard() {
         };
         if (data.host && data.host.status !== "pending") {
           setEnrolled(true);
-          window.clearInterval(t);
           router.refresh();
         }
       } catch {
         /* ignore */
       }
-    }, 2000);
-    return () => window.clearInterval(t);
-  }, [step, createdHostId, enrolled, router]);
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    if (step !== 3 || !createdHostId || enrolled) {
+      return;
+    }
+    let cancelled = false;
+    const startedAt = Date.now();
+    const timeoutMs = 6 * 60_000;
+
+    const checkEnrollment = async () => {
+      if (cancelled) {
+        return;
+      }
+      if (Date.now() - startedAt > timeoutMs) {
+        setPollTimedOut(true);
+        return;
+      }
+      await checkEnrollmentStatus(createdHostId);
+    };
+
+    void checkEnrollment();
+    const fallback = window.setInterval(() => {
+      void checkEnrollment();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(fallback);
+    };
+  }, [step, createdHostId, enrolled, checkEnrollmentStatus]);
+
+  useHostRealtimeForHost(createdHostId, () => {
+    if (step !== 3 || enrolled || !createdHostId) {
+      return;
+    }
+    void checkEnrollmentStatus(createdHostId);
+  });
 
   useEffect(() => {
     if (step !== 3) {
@@ -219,6 +305,11 @@ export function AddHostWizard() {
       ? buildEnrollShellCommand(installBaseUrl, enrollmentToken)
       : "";
 
+  const pairingShellCmd =
+    pairingCode && installBaseUrl
+      ? buildPairingShellCommand(installBaseUrl, pairingCode)
+      : "";
+
   const osNote =
     platformOs === "windows"
       ? "Install WSL 2 (Ubuntu), install Node.js 18+ inside WSL, then paste the command in that Linux shell."
@@ -238,9 +329,13 @@ export function AddHostWizard() {
         <SheetHeader>
           <SheetTitle>Add host</SheetTitle>
           <SheetDescription>
-            Name the machine, pick an OS, then run the one-line installer on the
-            game host. It enrolls the agent, starts it in the background, and
-            you do not need to SSH again for normal operation.
+            Name the machine, pick an OS, then link it with a short pairing code
+            (easiest) or the advanced one-line command. The agent starts in the
+            background — you do not need SSH for normal operation.{" "}
+            <Link className="text-primary underline" href="/docs/getting-started">
+              GameServerOS and getting started
+            </Link>
+            .
           </SheetDescription>
         </SheetHeader>
 
@@ -342,6 +437,148 @@ export function AddHostWizard() {
                   <div className="rounded-lg border border-border/80 bg-muted/20 p-3 text-xs text-muted-foreground">
                     <p>{osNote}</p>
                   </div>
+
+                  {pairingError ? (
+                    <p className="text-xs text-amber-800 dark:text-amber-200">
+                      {pairingError}
+                    </p>
+                  ) : null}
+
+                  {pairingCode ? (
+                    <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          Pairing code
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          Enter this on the machine when asked (for example in the
+                          GameServerOS installer), or scan the QR code with your
+                          phone to read the code aloud. This code expires after a
+                          short time — use &quot;New code&quot; if it runs out.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-start gap-6">
+                        <div className="rounded-lg border border-border/80 bg-background p-3">
+                          <QRCode
+                            value={pairingCode}
+                            size={148}
+                            style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                            viewBox="0 0 256 256"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <p
+                            className="font-mono text-2xl font-semibold tracking-[0.2em] text-foreground"
+                            translate="no"
+                          >
+                            {pairingCode}
+                          </p>
+                          {pairingExpiresAt ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              Valid until{" "}
+                              {new Date(pairingExpiresAt).toLocaleString(undefined, {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </p>
+                          ) : null}
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="gap-1"
+                              onClick={async () => {
+                                await navigator.clipboard.writeText(pairingCode);
+                              }}
+                            >
+                              <Copy className="size-3.5" />
+                              Copy code
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              disabled={pairingBusy}
+                              onClick={() => void regeneratePairingCode()}
+                            >
+                              {pairingBusy ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="size-3.5" />
+                              )}
+                              New code
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">One-line install (recommended)</Label>
+                        <div className="relative rounded-md border border-border/80 bg-muted/30 p-3 font-mono text-[11px] leading-relaxed break-all">
+                          {installUrlLoading && !installBaseUrl ? (
+                            <span className="inline-flex items-center gap-2 text-muted-foreground">
+                              <Loader2 className="size-3.5 animate-spin" />
+                              Resolving dashboard URL…
+                            </span>
+                          ) : (
+                            pairingShellCmd || "…"
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="gap-1"
+                          disabled={!pairingShellCmd || installUrlLoading}
+                          onClick={async () => {
+                            if (pairingShellCmd) {
+                              await navigator.clipboard.writeText(pairingShellCmd);
+                            }
+                          }}
+                        >
+                          <Copy className="size-3.5" />
+                          Copy install command
+                        </Button>
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          Manual enroll (if you already have{" "}
+                          <code className="rounded bg-muted px-1 font-mono text-[10px]">
+                            steamline-agent.cjs
+                          </code>
+                          ):{" "}
+                          <code className="rounded bg-muted px-1 font-mono text-[10px]">
+                            node steamline-agent.cjs enroll{" "}
+                            {installBaseUrl ?? "<dashboard-url>"} --pairing-code{" "}
+                            {pairingCode}
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    {process.env.NEXT_PUBLIC_GAMESERVEROS_ISO_URL ? (
+                      <Link
+                        href={process.env.NEXT_PUBLIC_GAMESERVEROS_ISO_URL}
+                        className="text-primary underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        GameServerOS download
+                      </Link>
+                    ) : null}
+                    {process.env.NEXT_PUBLIC_INSTALL_DOC_URL ? (
+                      <Link
+                        href={process.env.NEXT_PUBLIC_INSTALL_DOC_URL}
+                        className="text-primary underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Installation help
+                      </Link>
+                    ) : null}
+                  </div>
+
                   {showPublicUrlHint ? (
                     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950 dark:text-amber-100">
                       <p className="font-medium text-foreground">
@@ -360,56 +597,77 @@ export function AddHostWizard() {
                       </p>
                     </div>
                   ) : null}
-                  <div className="space-y-2">
-                    <Label>Run once on the game host</Label>
-                    <div className="relative rounded-md border border-border/80 bg-muted/30 p-3 font-mono text-xs leading-relaxed break-all">
-                      {installUrlLoading && !installBaseUrl ? (
-                        <span className="inline-flex items-center gap-2 text-muted-foreground">
-                          <Loader2 className="size-3.5 animate-spin" />
-                          Resolving dashboard URL…
-                        </span>
-                      ) : (
-                        shellCmd || "…"
-                      )}
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Run this only on <strong className="font-medium text-foreground">each machine where you want to run game servers</strong>. Steamline is hosted at{" "}
-                      <span className="font-mono text-foreground/90">
-                        {HOSTED_DASHBOARD_PUBLIC_URL}
+
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
+                    {pollTimedOut ? (
+                      <span className="text-amber-700 dark:text-amber-300">
+                        Still waiting — finish linking on the host, or check
+                        connectivity. You can open &quot;Advanced&quot; below and use
+                        the token command if pairing is not available.
                       </span>
-                      — this command installs the agent so you can <strong className="font-medium text-foreground">deploy servers from the dashboard</strong>, not host the platform yourself.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="gap-1"
-                        disabled={!shellCmd || installUrlLoading}
-                        onClick={async () => {
-                          if (shellCmd) {
-                            await navigator.clipboard.writeText(shellCmd);
-                          }
-                        }}
-                      >
-                        <Copy className="size-3.5" />
-                        Copy command
-                      </Button>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        {pollTimedOut ? (
-                          <span className="text-amber-600 dark:text-amber-400">
-                            Still waiting — run the command on the host, or
-                            check connectivity.
+                    ) : (
+                      <>
+                        <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                        <span>Waiting for enrollment…</span>
+                      </>
+                    )}
+                  </div>
+
+                  <details className="group rounded-lg border border-border/80 bg-muted/10">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-foreground">
+                      Advanced: one-line install with secret token
+                    </summary>
+                    <div className="space-y-2 border-t border-border/60 px-3 py-3">
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        For your own Linux server, you can still paste this once in
+                        a terminal. It uses a long secret instead of the pairing
+                        code.
+                      </p>
+                      <Label className="text-xs">Run once on the game host</Label>
+                      <div className="relative rounded-md border border-border/80 bg-muted/30 p-3 font-mono text-xs leading-relaxed break-all">
+                        {installUrlLoading && !installBaseUrl ? (
+                          <span className="inline-flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="size-3.5 animate-spin" />
+                            Resolving dashboard URL…
                           </span>
                         ) : (
-                          <>
-                            <Loader2 className="size-3.5 animate-spin" />
-                            Waiting for enrollment…
-                          </>
+                          shellCmd || "…"
                         )}
-                      </span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        Run this only on{" "}
+                        <strong className="font-medium text-foreground">
+                          each machine where you want to run game servers
+                        </strong>
+                        . Steamline is hosted at{" "}
+                        <span className="font-mono text-foreground/90">
+                          {HOSTED_DASHBOARD_PUBLIC_URL}
+                        </span>
+                        — this command installs the agent so you can{" "}
+                        <strong className="font-medium text-foreground">
+                          deploy servers from the dashboard
+                        </strong>
+                        , not host the platform yourself.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="gap-1"
+                          disabled={!shellCmd || installUrlLoading}
+                          onClick={async () => {
+                            if (shellCmd) {
+                              await navigator.clipboard.writeText(shellCmd);
+                            }
+                          }}
+                        >
+                          <Copy className="size-3.5" />
+                          Copy command
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  </details>
                 </>
               )}
             </div>

@@ -27,5 +27,5 @@ if [ "${RUN_CATALOG_SEED_ON_START:-1}" != "0" ]; then
   echo "[steamline] Ensuring default catalog entries…"
   node scripts/seed-catalog-if-empty.cjs
 fi
-echo "[steamline] Starting Next.js…"
-exec node server.js
+echo "[steamline] Starting Next.js (custom server + agent WebSocket)…"
+exec npm start

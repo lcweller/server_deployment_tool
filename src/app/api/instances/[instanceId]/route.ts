@@ -12,6 +12,11 @@ import {
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
 import { analyzeRecentLogLines } from "@/lib/log-insights";
 import { isHostHeartbeatFresh } from "@/lib/host-presence";
+import {
+  notifyHostOwnerDashboard,
+  notifyUserServersRealtime,
+} from "@/lib/realtime/notify-dashboard";
+import { sendControlToAgent } from "@/server/agent-socket-registry";
 
 type RouteCtx = { params: Promise<{ instanceId: string }> };
 
@@ -186,6 +191,12 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       })
       .where(eq(serverInstances.id, instanceId));
 
+    notifyHostOwnerDashboard(auth.user.id, inst.hostId);
+    sendControlToAgent(inst.hostId, {
+      action: "instance_stop",
+      instanceId,
+    });
+
     return NextResponse.json({
       ok: true,
       instanceId,
@@ -215,6 +226,12 @@ export async function PATCH(request: Request, ctx: RouteCtx) {
       updatedAt: now,
     })
     .where(eq(serverInstances.id, instanceId));
+
+  notifyHostOwnerDashboard(auth.user.id, inst.hostId);
+  sendControlToAgent(inst.hostId, {
+    action: "instance_start",
+    instanceId,
+  });
 
   return NextResponse.json({
     ok: true,
@@ -263,6 +280,16 @@ export async function DELETE(_request: Request, ctx: RouteCtx) {
       updatedAt: new Date(),
     })
     .where(eq(serverInstances.id, instanceId));
+
+  if (inst.hostId) {
+    notifyHostOwnerDashboard(auth.user.id, inst.hostId);
+    sendControlToAgent(inst.hostId, {
+      action: "instance_delete",
+      instanceId,
+    });
+  } else {
+    notifyUserServersRealtime(auth.user.id);
+  }
 
   return NextResponse.json({
     ok: true,

@@ -78,6 +78,62 @@
       "when": 1775771000000,
       "tag": "0010_host_steam_secrets_pending",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775772000000,
+      "tag": "0011_host_linux_root_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775773000000,
+      "tag": "0012_host_pairing_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775774000000,
+      "tag": "0013_host_terminal_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775775000000,
+      "tag": "0014_host_agent_update_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1775776000000,
+      "tag": "0015_backup_system",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1775777000000,
+      "tag": "0016_backup_policy_instance",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1775778000000,
+      "tag": "0017_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1775779000000,
+      "tag": "0018_gameserveros_install_sessions",
+      "breakpoints": true
     }
   ]
 }

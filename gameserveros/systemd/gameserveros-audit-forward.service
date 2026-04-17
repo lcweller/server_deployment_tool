@@ -1,0 +1,10 @@
+[Unit]
+Description=Forward recent audit events to a local digest file
+After=auditd.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gameserveros/scripts/audit-forward.sh
+
+[Install]
+WantedBy=multi-user.target

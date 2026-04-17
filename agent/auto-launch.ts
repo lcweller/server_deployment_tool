@@ -91,7 +91,10 @@ function scoreLinuxBin(full: string, base: string): number {
 
 function scoreShellScript(_full: string, base: string): number {
   const n = base.toLowerCase();
-  if (!n.endsWith(".sh")) {
+  /** Valve ships extensionless runners (`hlds_run`, `srcds_run`) — they are not `*.sh`. */
+  const isKnownRunner =
+    n.endsWith(".sh") || /^(hlds_run|srcds_run)$/i.test(base);
+  if (!isKnownRunner) {
     return -1;
   }
   if (/uninstall|setup|install|build|configure/i.test(n)) {
