@@ -122,8 +122,13 @@ steamline_try_apt_install_nodejs() {
   export DEBIAN_FRONTEND=noninteractive
 
   # Ubuntu 24.04+ and some derivatives ship nodejs 18+ in main/universe.
+  # Distro "nodejs" often does NOT pull in "npm" — install explicitly so optional
+  # agent deps (ssh2-sftp-client, node-pty) can be installed under ~/.steamline.
   apt-get install -y -qq nodejs 2>/dev/null || true
   if steamline_node_version_ok; then
+    if ! command -v npm >/dev/null 2>&1; then
+      apt-get install -y -qq npm 2>/dev/null || true
+    fi
     echo "steamline: Using Node.js $(command -v node) ($(node -v))." >&2
     return 0
   fi
@@ -135,6 +140,9 @@ steamline_try_apt_install_nodejs() {
   fi
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y -qq nodejs
+  if ! command -v npm >/dev/null 2>&1; then
+    apt-get install -y -qq npm 2>/dev/null || true
+  fi
 
   if steamline_node_version_ok; then
     echo "steamline: Node.js $(node -v) ready." >&2
@@ -165,6 +173,21 @@ if [[ "$(uname -s)" == "Linux" ]]; then
   steamline_try_apt_install_nodejs
   steamline_try_apk_bootstrap
 fi
+
+# Minimal images: Node may exist without npm (e.g. only /usr/bin/nodejs). Ensure npm
+# before optional native/JS deps, or enrollment will fail when the bundle requires them.
+steamline_try_ensure_npm() {
+  command -v npm >/dev/null 2>&1 && return 0
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  [[ "${STEAMLINE_SKIP_APT:-0}" == "1" ]] && return 0
+  [[ -x /usr/bin/apt-get ]] || return 0
+  [[ "$(id -u)" == "0" ]] || return 0
+  export DEBIAN_FRONTEND=noninteractive
+  echo "steamline: Installing npm (required for optional agent modules)…" >&2
+  apt-get update -qq 2>/dev/null || true
+  apt-get install -y -qq npm 2>/dev/null || true
+}
+steamline_try_ensure_npm
 
 if ! command -v curl >/dev/null 2>&1; then
   die "curl is required but not found (install curl and re-run)."

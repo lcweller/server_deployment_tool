@@ -18,7 +18,10 @@ export function useHostRealtimeEvents(
   onHostEvent: (payload: HostRealtimeEvent) => void
 ): void {
   const cbRef = useRef(onHostEvent);
-  cbRef.current = onHostEvent;
+
+  useEffect(() => {
+    cbRef.current = onHostEvent;
+  }, [onHostEvent]);
 
   useEffect(() => {
     let es: EventSource | null = null;

@@ -50,7 +50,7 @@ flowchart LR
 ## Remote terminal (Phase 5)
 
 - Browser WebSocket: `/api/hosts/ws-terminal?hostId=` (session cookie auth).
-- Relay + audit: `src/server/attach-browser-terminal-ws.ts`, `src/lib/terminal/*`, table `host_terminal_sessions`.
+- Relay + audit: `src/server/browser-terminal-ws-upgrade.ts`, `src/lib/terminal/*`, table `host_terminal_sessions`.
 - Agent: `agent/terminal-manager.ts` uses native **`node-pty`** (optional dependency / `~/.steamline/node_modules`, installed by `install-agent.sh`). Bundled agent **externalizes** `node-pty` in `scripts/bundle-agent.mjs`.
 - Linux + root agent only; max 5 concurrent sessions per host; 30 min idle timeout (`STEAMLINE_TERMINAL_IDLE_MS`).
 

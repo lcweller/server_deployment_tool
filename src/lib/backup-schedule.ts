@@ -36,7 +36,7 @@ function lastWeeklySlotUTC(now: Date, expr: string | null): Date {
   const hour = Number(parts[1]);
   const minute = Number(parts[2] ?? 0);
   const currentDow = now.getUTCDay();
-  let diff = (currentDow - dow + 7) % 7;
+  const diff = (currentDow - dow + 7) % 7;
   let slot = new Date(
     Date.UTC(
       now.getUTCFullYear(),

@@ -18,7 +18,7 @@ Plain-language guide for **you** — no Linux background required.
 
 1. Log in to your Steamline dashboard.
 2. Open **Hosts** (or your operator’s “provisioning” page, if provided).
-3. Download the latest **GameServerOS** image your team publishes (`gameserveros-*-amd64-rootfs.tar.gz` or a prepared `.iso` when available).
+3. Download the latest **GameServerOS** image your team publishes (`gameserveros-*-amd64.iso`, or a rootfs tarball if your operator uses that flow).
 
 ![Download button](/screenshot-placeholder.png)
 

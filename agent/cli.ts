@@ -464,7 +464,8 @@ async function runLoop(baseUrl: string, intervalMs: number) {
       });
     };
 
-    let wsClient: AgentWebSocketClient;
+    // `bindAgentStreams` closes over this client; assigned once below (not `const` at declaration).
+    let wsClient: AgentWebSocketClient; // eslint-disable-line prefer-const -- assigned after factory below
     const bindAgentStreams = () => {
       setInstanceRealtimeUpstream((payload) => {
         if (!wsClient.isConnected()) {

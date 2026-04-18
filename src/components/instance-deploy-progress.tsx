@@ -229,7 +229,9 @@ export function InstanceDeployProgress({ instanceId, initial }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    void tick();
+    queueMicrotask(() => {
+      void tick();
+    });
     if (!shouldPoll) {
       return () => {
         cancelled = true;

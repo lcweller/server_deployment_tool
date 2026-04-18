@@ -52,7 +52,9 @@ export function useHostBackupData(hostId: string) {
   }, [hostId]);
 
   useEffect(() => {
-    void load();
+    queueMicrotask(() => {
+      void load();
+    });
   }, [load]);
 
   useHostRealtimeForHost(hostId, () => {

@@ -18,7 +18,8 @@
     "agent:run": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/agent-run.ps1",
     "catalog:ingest:local": "node scripts/catalog-ingest-local.mjs",
     "setup:local": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/setup-local.ps1",
-    "verify:smoke": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/smoke-verify.ps1"
+    "verify:smoke": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/smoke-verify.ps1",
+    "test:ui-section14": "node scripts/ui-section14.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",

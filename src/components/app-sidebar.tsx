@@ -76,11 +76,11 @@ type AppSidebarProps = {
 export function AppSidebar({ userEmail }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" variant="inset">
-      <SidebarHeader className="border-b border-sidebar-border/60 pb-3">
+      <SidebarHeader className="z-20 overflow-visible border-b border-sidebar-border/60 pb-3">
         <div className="flex items-center gap-1">
           <Link
             href="/dashboard"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 outline-none ring-sidebar-ring focus-visible:ring-2"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 outline-none ring-sidebar-ring focus-visible:ring-2 group-data-[collapsible=icon]:flex-none"
           >
             <span
               className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground"
@@ -97,7 +97,7 @@ export function AppSidebar({ userEmail }: AppSidebarProps) {
               </span>
             </div>
           </Link>
-          <div className="shrink-0 group-data-[collapsible=icon]:hidden">
+          <div className="shrink-0">
             <NotificationBell />
           </div>
         </div>

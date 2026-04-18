@@ -1,4 +1,5 @@
-import type { Server } from "node:http";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 
 import { runAgentHeartbeatFromJson } from "@/lib/agent/heartbeat-core";
@@ -17,21 +18,29 @@ import { registerAgentSocket, unregisterAgentSocket } from "@/server/agent-socke
 
 const WS_PATH = "/api/v1/agent/ws";
 
-export function attachAgentWebSocketServer(server: Server): void {
+/**
+ * Agent WebSocket upgrade logic (no `server.on("upgrade")` — routing lives in server.ts).
+ * Returns true if this request is for the agent socket (ownership claimed).
+ */
+export function createAgentWebSocketUpgradeHandler() {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on("upgrade", (request, socket, head) => {
+  return function tryAgentUpgrade(
+    request: IncomingMessage,
+    socket: Duplex,
+    head: Buffer
+  ): boolean {
     const host = request.headers.host ?? "localhost";
     let pathname: string;
     try {
       pathname = new URL(request.url ?? "/", `http://${host}`).pathname;
     } catch {
       socket.destroy();
-      return;
+      return true;
     }
 
     if (pathname !== WS_PATH) {
-      return;
+      return false;
     }
 
     void (async () => {
@@ -228,5 +237,7 @@ export function attachAgentWebSocketServer(server: Server): void {
         });
       });
     })();
-  });
+
+    return true;
+  };
 }

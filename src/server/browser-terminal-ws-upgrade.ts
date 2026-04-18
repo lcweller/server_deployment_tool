@@ -1,4 +1,5 @@
-import type { Server } from "node:http";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 
@@ -18,7 +19,6 @@ import { sendControlToAgent } from "@/server/agent-socket-registry";
 
 const WS_PATH = "/api/hosts/ws-terminal";
 
-/** Simple rate limit: max session opens per host per sliding hour. */
 const openCounts = new Map<string, { n: number; windowStart: number }>();
 const MAX_OPENS_PER_HOST_PER_HOUR = 40;
 
@@ -36,10 +36,14 @@ function allowOpen(hostId: string): boolean {
   return true;
 }
 
-export function attachBrowserTerminalWebSocket(server: Server): void {
+export function createBrowserTerminalWebSocketUpgradeHandler() {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on("upgrade", (request, socket, head) => {
+  return function tryTerminalUpgrade(
+    request: IncomingMessage,
+    socket: Duplex,
+    head: Buffer
+  ): boolean {
     const host = request.headers.host ?? "localhost";
     let pathname: string;
     let searchParams: URLSearchParams;
@@ -49,18 +53,18 @@ export function attachBrowserTerminalWebSocket(server: Server): void {
       searchParams = u.searchParams;
     } catch {
       socket.destroy();
-      return;
+      return true;
     }
 
     if (pathname !== WS_PATH) {
-      return;
+      return false;
     }
 
     const hostId = searchParams.get("hostId")?.trim();
     if (!hostId) {
       socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
       socket.destroy();
-      return;
+      return true;
     }
 
     void (async () => {
@@ -212,5 +216,7 @@ export function attachBrowserTerminalWebSocket(server: Server): void {
         })();
       });
     })();
-  });
+
+    return true;
+  };
 }

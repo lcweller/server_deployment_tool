@@ -78,7 +78,7 @@ DB: `gameserveros_install_sessions` (`drizzle/0018_gameserveros_install_sessions
 - `GET /api/v1/agent/host` — includes `updateMode`, `platformOs`
 - `GET /api/v1/agent/updates/latest`, `GET /api/v1/agent/artifact`
 - `POST /api/v1/agent/backup-schedule`
-- WebSocket `/api/v1/agent/ws` — message types include `heartbeat`, `instance_status`, `instance_logs`, `agent_update_event`, backup events (`attach-agent-ws.ts`).
+- WebSocket `/api/v1/agent/ws` — message types include `heartbeat`, `instance_status`, `instance_logs`, `agent_update_event`, backup events (`src/server/agent-ws-upgrade.ts`).
 
 ### Self-update
 

@@ -8,7 +8,7 @@ Runtime and libraries required on a **game host** for the bundled agent (`steaml
 |-------|-------------|
 | Runtime | **Node.js 20+** (matches Next 16 / `tsx`); lockfile pins npm packages |
 | Database | **PostgreSQL** (Drizzle migrations under `drizzle/`) |
-| Process | **`npm run start`** → `tsx server.ts` (HTTP + agent WebSocket upgrade) |
+| Process | **`npm run start`** → `tsx --conditions=react-server server.ts` (HTTP + agent WebSocket; `react-server` resolves `server-only` to the no-op export) |
 | Email | SMTP for verification (e.g. Mailpit locally) |
 | Optional | Stripe keys, Cloudflare Turnstile, `CRON_SECRET` for cron routes |
 
