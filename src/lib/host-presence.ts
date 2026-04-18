@@ -4,10 +4,14 @@
  */
 
 /**
- * With WebSocket heartbeats every ~2.5s (agent default), the host should flip offline
- * shortly after the agent stops. Keep a small buffer for TCP hiccups.
+ * How old `lastSeenAt` may be before the UI treats the host as unreachable.
+ *
+ * The agent normally heartbeats over WebSocket every ~2.5s. If WebSocket is blocked
+ * or `STEAMLINE_DISABLE_AGENT_WS=1`, it falls back to REST on an interval that defaults
+ * to **30s** (`steamline-agent run --interval`). A 6s window falsely showed those hosts
+ * as offline between every REST heartbeat — use a window that covers REST + jitter.
  */
-export const HOST_HEARTBEAT_MAX_AGE_MS = 6_000;
+export const HOST_HEARTBEAT_MAX_AGE_MS = 65_000;
 
 export function isHostHeartbeatFresh(
   lastSeenAt: Date | string | null | undefined

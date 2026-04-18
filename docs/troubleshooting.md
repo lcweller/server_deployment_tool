@@ -7,7 +7,9 @@ If something looks wrong, try the steps in order. **You are not expected to read
 1. Is the machine **powered on** and plugged into **power and network**?
 2. If it is a home PC, did **Windows Update** or a router reboot change anything? Reboot the PC once.
 3. Wait **two minutes** — status updates after the agent checks in.
-4. Still offline? Open **[Management](./management.md)** → remote terminal (if it still connects) or contact support with your **host name** and **approximate time** the issue started.
+4. **Dashboard vs agent URL:** the host must reach the same **public base URL** you configured (`APP_PUBLIC_URL` on the server). If the agent was installed with a **LAN** URL (e.g. `http://192.168.x.x:3000`) but the server advertises **HTTPS**, heartbeats can fail after enroll — re-check the install command from **Add host** and `~/.steamline/agent.log` on the machine.
+5. **WebSocket:** the agent prefers `wss://…/api/v1/agent/ws`. Some reverse proxies must allow **HTTP Upgrade** for that path. If WebSocket is blocked, the agent falls back to REST heartbeats on a **longer** interval — the dashboard allows about **one minute** between check-ins before showing offline; if you still see offline, confirm the agent process is running (`steamline-agent` / your service) and not crashing on each heartbeat.
+6. Still offline? Open **[Management](./management.md)** → remote terminal (if it still connects) or contact support with your **host name** and **approximate time** the issue started.
 
 ## The installer says there is no internet
 
@@ -19,7 +21,7 @@ If something looks wrong, try the steps in order. **You are not expected to read
 
 1. Codes **expire** — on the server screen, choose **retry** to get a new code if offered.
 2. On the dashboard, use **Hosts → Link GameServerOS** and type the code **exactly** as shown (letters and numbers only, with the **dash** in the middle).
-3. Make sure you are logging into the **same Steamline account** you intend to use.
+3. Make sure you are logging into the **same GameServerOS account** you intend to use.
 
 ## My game server will not start
 
