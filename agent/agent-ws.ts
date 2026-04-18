@@ -107,10 +107,22 @@ export class AgentWebSocketClient {
           return;
         }
         if (j.type === "ack") {
+          // Instance log / status acks are `{ ok: true, type: "ack" }` without hostId.
+          // If the server ever echoes hostId on an ack-shaped heartbeat, still count it.
+          if (j.ok === true && typeof j.hostId === "string") {
+            this.callbacks.onHeartbeatResponse(j as HeartbeatJson);
+          }
           return;
         }
         if (j.ok === true) {
           this.callbacks.onHeartbeatResponse(j as HeartbeatJson);
+        } else if (
+          j.ok !== false &&
+          typeof j.hostId === "string" &&
+          /^[0-9a-f-]{36}$/i.test(j.hostId)
+        ) {
+          // Some proxies strip or alter `ok`; treat a well-formed host payload as success.
+          this.callbacks.onHeartbeatResponse({ ...j, ok: true } as HeartbeatJson);
         }
       } catch {
         /* ignore malformed */

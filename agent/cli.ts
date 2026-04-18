@@ -840,11 +840,12 @@ async function runLoop(baseUrl: string, intervalMs: number) {
     Number(process.env.STEAMLINE_AGENT_WS_LIFECYCLE_INTERVAL_MS) || 300_000;
   const restLifecycleMs =
     Number(process.env.STEAMLINE_AGENT_REST_LIFECYCLE_INTERVAL_MS) || 15_000;
+  /** Max sleep between run-loop iterations while WS is "up" (WS client sends heartbeats on its own timer). */
   const loopSleepWs =
-    Number(process.env.STEAMLINE_AGENT_LOOP_INTERVAL_MS_WS) || 60_000;
+    Number(process.env.STEAMLINE_AGENT_LOOP_INTERVAL_MS_WS) || 15_000;
 
   console.error(
-    `steamline-agent: WebSocket + run loop (${intervalMs}ms cycle, REST lifecycle fallback ${restLifecycleMs}ms / WS ${wsLifecycleMs}ms) — Ctrl+C to stop`
+    `steamline-agent: WebSocket + run loop (${intervalMs}ms base interval, REST lifecycle fallback ${restLifecycleMs}ms / WS ${wsLifecycleMs}ms, loop cap ${loopSleepWs}ms when WS enabled) — Ctrl+C to stop`
   );
   let lastRestLifecycleAt = 0;
   let lastSecurityReconcileAt = 0;
@@ -861,6 +862,10 @@ async function runLoop(baseUrl: string, intervalMs: number) {
         );
       }
       if (ok) {
+        // REST path must advance this too; otherwise WS "connected" but broken ACKs
+        // leave wsLastSuccess stale, shouldUseRestHeartbeat stays true, and the loop
+        // slept up to 60s between REST beats — dashboard saw the host offline.
+        wsLastSuccess = Date.now();
         await applyHeartbeatSideEffects(baseUrl, data);
       }
     }
@@ -890,7 +895,12 @@ async function runLoop(baseUrl: string, intervalMs: number) {
       }
       lastIntegrityCheckAt = now;
     }
-    const sleepMs = wsConnected ? Math.max(intervalMs, loopSleepWs) : intervalMs;
+    // When WS is enabled, do not sleep longer than loopSleepWs: if WS heartbeats fail
+    // to refresh the server (or ACKs are not parsed), REST fallback must run often
+    // enough to keep lastSeenAt within the dashboard stale window.
+    const sleepMs = wsConnected
+      ? Math.min(Math.max(5_000, intervalMs), loopSleepWs)
+      : intervalMs;
     await new Promise((r) => setTimeout(r, sleepMs));
   }
 }
@@ -971,11 +981,11 @@ program
   )
   .option(
     "-i, --interval <ms>",
-    "Milliseconds between heartbeat/provision cycles",
-    String(30_000)
+    "Milliseconds between heartbeat/provision cycles (REST mode; also caps run-loop sleep when WebSocket is enabled)",
+    String(12_000)
   )
   .action(async (baseUrl: string, opts: { interval: string }) => {
-    const intervalMs = Math.max(5000, Number(opts.interval) || 30_000);
+    const intervalMs = Math.max(5000, Number(opts.interval) || 12_000);
     await runLoop(baseUrl, intervalMs);
   });
 
