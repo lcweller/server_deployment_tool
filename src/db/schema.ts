@@ -16,6 +16,8 @@ import {
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
+  /** Friendly name from signup (optional for legacy rows). */
+  displayName: text("display_name"),
   passwordHash: text("password_hash").notNull(),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   stripeCustomerId: text("stripe_customer_id"),

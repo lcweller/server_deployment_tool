@@ -13,6 +13,7 @@ import { createSessionForUser } from "@/lib/auth/session";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const bodySchema = z.object({
+  name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(320),
   password: z.string().min(8).max(200),
   turnstileToken: z.string().optional(),
@@ -59,7 +60,11 @@ export async function POST(request: Request) {
   const passwordHash = await hashPassword(parsed.data.password);
   const [user] = await db
     .insert(users)
-    .values({ email, passwordHash })
+    .values({
+      email,
+      displayName: parsed.data.name,
+      passwordHash,
+    })
     .returning({ id: users.id, email: users.email });
 
   const raw = await createEmailVerificationToken(user.id);

@@ -6,18 +6,24 @@ import { db } from "@/db";
 import { hosts, serverInstances } from "@/db/schema";
 import { requireVerifiedUser } from "@/lib/auth/require-verified";
 import { effectiveHostStatus } from "@/lib/host-presence";
-import { notifyHostOwnerDashboard } from "@/lib/realtime/notify-dashboard";
+import { purgeHostRecord } from "@/lib/purge-host-record";
+import {
+  notifyHostOwnerDashboard,
+  notifyUserServersRealtime,
+} from "@/lib/realtime/notify-dashboard";
 import { sendControlToAgent } from "@/server/agent-socket-registry";
 
 type RouteCtx = { params: Promise<{ hostId: string }> };
 
-export async function DELETE(_request: Request, ctx: RouteCtx) {
+export async function DELETE(request: Request, ctx: RouteCtx) {
   const auth = await requireVerifiedUser();
   if ("error" in auth) {
     return auth.error;
   }
 
   const { hostId } = await ctx.params;
+  const forceParam = new URL(request.url).searchParams.get("force");
+  const force = forceParam === "1" || forceParam === "true";
 
   const rows = await db
     .select()
@@ -28,6 +34,22 @@ export async function DELETE(_request: Request, ctx: RouteCtx) {
   const host = rows[0];
   if (!host) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  /**
+   * Agent will never call `removal-complete` if the machine is gone — drop the
+   * dashboard rows so the user can enroll again. Does not wipe the remote disk.
+   */
+  if (host.status === "pending_removal" && force) {
+    await purgeHostRecord(hostId);
+    notifyUserServersRealtime(auth.user.id);
+    return NextResponse.json({
+      ok: true,
+      hostId,
+      removed: true,
+      message:
+        "Host removed from your account. If the machine still exists, delete ~/.steamline on it (or reinstall) before enrolling again.",
+    });
   }
 
   if (host.status === "pending_removal") {

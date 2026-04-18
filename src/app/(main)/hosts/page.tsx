@@ -1,7 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
+import { Server } from "lucide-react";
 
-import { AddHostWizard } from "@/app/(main)/hosts/add-host-wizard";
+import {
+  AddHostWizard,
+  OpenAddHostSheetButton,
+} from "@/app/(main)/hosts/add-host-wizard";
 import { LinkGameServerOsSheet } from "@/components/link-gameserveros-sheet";
 import { RealtimeDashboardRefresh } from "@/components/realtime-dashboard-refresh";
 import { PageHeader } from "@/components/page-header";
@@ -50,7 +54,7 @@ export default async function HostsPage() {
       <RealtimeDashboardRefresh />
       <PageHeader
         title="Hosts"
-        description="Pair machines with the Steamline agent. Add a host, run one command on the machine, then open it for details."
+        description="Pair machines with the GameServerOS agent. Add a host, run one command on the machine, then open it for details."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <AddHostWizard />
@@ -62,14 +66,25 @@ export default async function HostsPage() {
         <section className="space-y-3">
           <h2 className="text-sm font-medium text-foreground">Your hosts</h2>
           {rows.length === 0 ? (
-            <Card className="border-border/80 border-dashed">
-              <CardHeader>
+            <Card className="border-border/80 border-dashed bg-muted/10">
+              <CardHeader className="text-center">
+                <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <Server className="size-6" aria-hidden />
+                </div>
                 <CardTitle className="text-base">No hosts yet</CardTitle>
-                <CardDescription>
-                  Use <span className="font-medium text-foreground">Add host</span>{" "}
-                  above to name your machine and get the enroll command.
+                <CardDescription className="text-balance">
+                  Name your machine, pick an OS, then run the one-line install on the
+                  box — or use a short pairing code. You can also click{" "}
+                  <span className="font-medium text-foreground">Add host</span> in
+                  the header.
                 </CardDescription>
               </CardHeader>
+              <CardContent className="flex justify-center pb-6">
+                <OpenAddHostSheetButton size="lg" className="gap-2">
+                  <Server className="size-4" aria-hidden />
+                  Add a host
+                </OpenAddHostSheetButton>
+              </CardContent>
             </Card>
           ) : (
             <ul className="grid gap-3 md:grid-cols-2">
@@ -118,7 +133,12 @@ export default async function HostsPage() {
                         ) : null}
                         {h.status === "pending_removal" ? (
                           <p className="text-xs text-amber-700 dark:text-amber-400">
-                            Removal in progress — open this host for status.
+                            Removal in progress — open this host. If the machine is
+                            offline, use{" "}
+                            <span className="font-medium">
+                              Remove from dashboard only
+                            </span>{" "}
+                            there.
                           </p>
                         ) : null}
                       </CardContent>

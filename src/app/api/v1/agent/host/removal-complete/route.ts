@@ -2,8 +2,9 @@ import { count, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
-import { hostApiKeys, hosts, serverInstances } from "@/db/schema";
+import { hosts, serverInstances } from "@/db/schema";
 import { authenticateAgentApiKey } from "@/lib/auth/agent-api-key";
+import { purgeHostRecord } from "@/lib/purge-host-record";
 import { notifyUserServersRealtime } from "@/lib/realtime/notify-dashboard";
 
 /**
@@ -48,8 +49,7 @@ export async function POST(request: Request) {
 
   notifyUserServersRealtime(h.userId);
 
-  await db.delete(hostApiKeys).where(eq(hostApiKeys.hostId, hostId));
-  await db.delete(hosts).where(eq(hosts.id, hostId));
+  await purgeHostRecord(hostId);
 
   return NextResponse.json({ ok: true, removedHostId: hostId });
 }

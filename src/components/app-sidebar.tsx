@@ -83,17 +83,17 @@ export function AppSidebar({ userEmail }: AppSidebarProps) {
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 outline-none ring-sidebar-ring focus-visible:ring-2 group-data-[collapsible=icon]:flex-none"
           >
             <span
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground"
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground"
               aria-hidden
             >
-              S
+              G
             </span>
             <div className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
               <span className="truncate text-sm font-semibold tracking-tight">
-                Steamline
+                GameServerOS
               </span>
               <span className="truncate text-xs text-sidebar-foreground/65">
-                Game servers
+                Dashboard
               </span>
             </div>
           </Link>

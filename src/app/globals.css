@@ -7,10 +7,16 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* System stacks — avoids next/font Google fetch at build time (offline/CI friendly) */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  /* Inter applied via next/font on <body>; fallbacks for CI / no-JS */
   --font-sans:
-    ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
-    sans-serif;
+    var(--font-inter, ui-sans-serif), ui-sans-serif, system-ui, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono:
     ui-monospace, "Cascadia Code", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas,
     monospace;
@@ -86,30 +92,43 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --success: oklch(0.45 0.14 145);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.75 0.14 85);
+  --warning-foreground: oklch(0.2 0.04 85);
+  --info: oklch(0.5 0.14 250);
+  --info-foreground: oklch(0.99 0 0);
 }
 
 /* Dark-first SaaS: neutral surfaces + single blue accent (Linear/Vercel-style discipline).
    Informed by NeuralForge DESIGN_SYSTEM.md + Luke's Picks contrast patterns. */
 .dark {
-  --background: oklch(0.13 0.02 260);
-  --foreground: oklch(0.97 0.01 260);
-  --card: oklch(0.17 0.02 260);
-  --card-foreground: oklch(0.97 0.01 260);
-  --popover: oklch(0.19 0.02 260);
-  --popover-foreground: oklch(0.97 0.01 260);
-  /* Primary CTA: restrained blue */
-  --primary: oklch(0.62 0.17 255);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.24 0.02 260);
-  --secondary-foreground: oklch(0.97 0.01 260);
-  --muted: oklch(0.24 0.02 260);
-  --muted-foreground: oklch(0.62 0.03 260);
-  --accent: oklch(0.26 0.03 260);
-  --accent-foreground: oklch(0.97 0.01 260);
+  /* GameServerOS dashboard — deep navy surfaces, electric blue accent (#3b82f6) */
+  --background: oklch(0.108 0.024 264);
+  --foreground: oklch(0.98 0.008 264);
+  --card: oklch(0.145 0.022 264);
+  --card-foreground: oklch(0.98 0.008 264);
+  --popover: oklch(0.16 0.024 264);
+  --popover-foreground: oklch(0.98 0.008 264);
+  /* Primary: blue-500 */
+  --primary: oklch(0.588 0.193 254);
+  --primary-foreground: oklch(0.995 0 0);
+  --secondary: oklch(0.2 0.022 264);
+  --secondary-foreground: oklch(0.97 0.01 264);
+  --muted: oklch(0.2 0.02 264);
+  --muted-foreground: oklch(0.62 0.028 264);
+  --accent: oklch(0.22 0.028 264);
+  --accent-foreground: oklch(0.97 0.01 264);
   --destructive: oklch(0.62 0.2 25);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.62 0.17 255);
+  --success: oklch(0.72 0.17 145);
+  --success-foreground: oklch(0.15 0.04 145);
+  --warning: oklch(0.86 0.14 85);
+  --warning-foreground: oklch(0.96 0.03 85);
+  --info: oklch(0.62 0.14 250);
+  --info-foreground: oklch(0.98 0.01 250);
+  --border: oklch(0.32 0.03 264);
+  --input: oklch(1 0 0 / 11%);
+  --ring: oklch(0.588 0.193 254);
   --chart-1: oklch(0.62 0.17 255);
   --chart-2: oklch(0.55 0.12 200);
   --chart-3: oklch(0.5 0.1 280);

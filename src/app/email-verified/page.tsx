@@ -28,7 +28,7 @@ export default async function EmailVerifiedPage({ searchParams }: Props) {
         : "Verification failed";
 
   const description = isSuccess
-    ? "Your account is ready. You can sign in to Steamline."
+    ? "Your account is ready. You can sign in to GameServerOS."
     : reason === "expired"
       ? "This verification link has expired. Sign in and request a new one from the verification page."
       : reason === "missing"
@@ -41,10 +41,10 @@ export default async function EmailVerifiedPage({ searchParams }: Props) {
         href="/"
         className="mb-8 flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
       >
-        <span className="flex size-8 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
-          S
+        <span className="flex size-8 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+          G
         </span>
-        Steamline
+        GameServerOS
       </Link>
       <Card className="w-full max-w-md border-border/80 shadow-lg">
         <CardHeader>

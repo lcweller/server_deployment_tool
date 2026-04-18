@@ -1,29 +1,28 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { Suspense } from "react";
+
+import { AuthShell } from "@/components/auth-shell";
 
 import { RegisterForm } from "./register-form";
 
+export const metadata: Metadata = {
+  title: "Create account",
+  description:
+    "Create your GameServerOS account to pair machines and deploy dedicated game servers.",
+};
+
 function RegisterFallback() {
   return (
-    <div className="h-[400px] w-full max-w-md animate-pulse rounded-xl border border-border/60 bg-card/50" />
+    <div className="h-[560px] w-full max-w-md animate-pulse rounded-lg border border-border/60 bg-card/50" />
   );
 }
 
 export default function RegisterPage() {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center bg-background px-4 py-12">
-      <Link
-        href="/"
-        className="mb-8 flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-      >
-        <span className="flex size-8 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
-          S
-        </span>
-        Steamline
-      </Link>
+    <AuthShell>
       <Suspense fallback={<RegisterFallback />}>
         <RegisterForm />
       </Suspense>
-    </div>
+    </AuthShell>
   );
 }

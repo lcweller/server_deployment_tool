@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { marked } from "marked";
 import { notFound } from "next/navigation";
@@ -48,30 +49,69 @@ export default async function DocsPage({
   const html = await marked.parse(md, { gfm: true, breaks: false });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
+    <>
       <PageHeader
         title="Documentation"
         description={
-          <span className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-            <Link className="text-primary underline-offset-4 hover:underline" href="/docs/getting-started">
-              Getting started
-            </Link>
-            <Link className="text-primary underline-offset-4 hover:underline" href="/docs/management">
-              Management
-            </Link>
-            <Link className="text-primary underline-offset-4 hover:underline" href="/docs/troubleshooting">
-              Troubleshooting
-            </Link>
-            <Link className="text-primary underline-offset-4 hover:underline" href="/docs/technical-reference">
-              Technical reference
-            </Link>
+          <span>
+            Guides for GameServerOS — agents, hosts, and game servers. Jump to a
+            section:
           </span>
         }
       />
-      <article
-        className="docs-markdown max-w-none text-sm"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    </div>
+      <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
+        <nav
+          aria-label="Documentation sections"
+          className="flex max-w-3xl flex-wrap gap-2"
+        >
+          <DocNavLink href="/docs/getting-started" current={slug[0] === "getting-started"}>
+            Getting started
+          </DocNavLink>
+          <DocNavLink href="/docs/management" current={slug[0] === "management"}>
+            Management
+          </DocNavLink>
+          <DocNavLink
+            href="/docs/troubleshooting"
+            current={slug[0] === "troubleshooting"}
+          >
+            Troubleshooting
+          </DocNavLink>
+          <DocNavLink
+            href="/docs/technical-reference"
+            current={slug[0] === "technical-reference"}
+          >
+            Technical reference
+          </DocNavLink>
+        </nav>
+        <article
+          className="docs-markdown mx-auto w-full max-w-3xl text-sm"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
+    </>
+  );
+}
+
+function DocNavLink({
+  href,
+  current,
+  children,
+}: {
+  href: string;
+  current: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        current
+          ? "rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-foreground"
+          : "rounded-lg border border-border/80 bg-muted/20 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
+      }
+      aria-current={current ? "page" : undefined}
+    >
+      {children}
+    </Link>
   );
 }

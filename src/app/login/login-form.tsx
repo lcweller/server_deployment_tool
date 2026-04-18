@@ -17,6 +17,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function loginErrorMessage(status: number, raw?: string): string {
+  if (status === 401) {
+    return "Invalid email or password.";
+  }
+  if (raw?.toLowerCase().includes("captcha")) {
+    return "Security check failed. Try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -48,7 +58,7 @@ export function LoginForm() {
         user?: { emailVerified?: boolean };
       };
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
+        setError(loginErrorMessage(res.status, data.error));
         return;
       }
       if (data.user && !data.user.emailVerified) {
@@ -59,20 +69,18 @@ export function LoginForm() {
       router.push(nextPath);
       router.refresh();
     } catch {
-      setError("Network error. Try again.");
+      setError("Network error. Check your connection and try again.");
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <Card className="w-full max-w-md border-border/80 shadow-lg">
+    <Card className="w-full max-w-md border-border/80 bg-card/95 shadow-lg backdrop-blur-sm">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-semibold tracking-tight">
-          Log in
-        </CardTitle>
-        <CardDescription>
-          Email, password, and Cloudflare Turnstile when configured.
+        <CardTitle className="text-2xl font-bold tracking-tight">Log in</CardTitle>
+        <CardDescription className="text-sm">
+          Sign in to manage your hosts and game servers.
         </CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
@@ -110,40 +118,39 @@ export function LoginForm() {
             />
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <Label htmlFor="login-password">Password</Label>
-              <span className="text-xs text-muted-foreground">
-                Forgot? (soon)
-              </span>
+              <span className="text-xs text-muted-foreground">Forgot password — coming soon</span>
             </div>
             <Input
               id="login-password"
               type="password"
               autoComplete="current-password"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label>Captcha</Label>
+            <Label htmlFor="login-captcha">Security check</Label>
             <TurnstileField
               onToken={setTurnstileToken}
               onExpire={() => setTurnstileToken(null)}
             />
           </div>
         </CardContent>
-        <CardFooter className="flex flex-col gap-4 border-t border-border/60">
-          <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? "Signing in…" : "Continue"}
+        <CardFooter className="flex flex-col gap-4 border-t border-border/60 bg-muted/20">
+          <Button type="submit" className="w-full" size="lg" pending={pending}>
+            Log in
           </Button>
           <p className="text-center text-sm text-muted-foreground">
-            No account?{" "}
+            Don&apos;t have an account?{" "}
             <Link
               href="/register"
-              className="font-medium text-primary hover:underline"
+              className="font-medium text-primary underline-offset-4 hover:underline"
             >
-              Create one
+              Sign up
             </Link>
           </p>
         </CardFooter>

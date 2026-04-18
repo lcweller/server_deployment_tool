@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 
 export function BillingActions({
   hasStripeCustomer,
+  canCheckout,
 }: {
   hasStripeCustomer: boolean;
+  canCheckout: boolean;
 }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -53,24 +55,34 @@ export function BillingActions({
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button
-        type="button"
-        disabled={loading !== null}
-        onClick={checkout}
-      >
-        {loading === "checkout" ? "Redirecting…" : "Subscribe / checkout"}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        disabled={loading !== null || !hasStripeCustomer}
-        onClick={portal}
-      >
-        {loading === "portal" ? "Opening…" : "Customer portal"}
-      </Button>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          disabled={loading !== null || !canCheckout}
+          pending={loading === "checkout"}
+          onClick={checkout}
+        >
+          Subscribe / checkout
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={loading !== null || !hasStripeCustomer}
+          pending={loading === "portal"}
+          onClick={portal}
+        >
+          Customer portal
+        </Button>
+      </div>
+      {!canCheckout ? (
+        <p className="text-xs text-muted-foreground">
+          Checkout is disabled until Stripe credentials and a price ID are
+          configured.
+        </p>
+      ) : null}
       {msg ? (
-        <p className="w-full text-sm text-destructive" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           {msg}
         </p>
       ) : null}

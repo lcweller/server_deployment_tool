@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { CheckCircle2, Copy, Loader2, RefreshCw, Server } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -22,6 +23,9 @@ import {
 import { HOSTED_DASHBOARD_PUBLIC_URL } from "@/lib/hosted-dashboard-url";
 import { useHostRealtimeForHost } from "@/lib/realtime/use-host-realtime-events";
 import { cn } from "@/lib/utils";
+
+/** Dispatched on `window` so any control (e.g. empty-state CTA) can open the sheet without prop drilling. */
+export const OPEN_ADD_HOST_SHEET_EVENT = "gameserveros:open-add-host-sheet";
 
 export type PlatformOs = "linux" | "macos" | "windows";
 
@@ -116,6 +120,12 @@ export function AddHostWizard() {
       reset();
     }
   }, [open, reset]);
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_ADD_HOST_SHEET_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_ADD_HOST_SHEET_EVENT, onOpen);
+  }, []);
 
   async function requestPairingCode(hostId: string) {
     setPairingBusy(true);
@@ -590,7 +600,7 @@ export function AddHostWizard() {
                           {installBaseUrl}
                         </span>{" "}
                         (from <code className="rounded bg-muted px-1">APP_PUBLIC_URL</code>)
-                        so remote game servers can reach Steamline. Browsing via a
+                        so the agent can reach this dashboard. Browsing via a
                         LAN address is fine; the host still needs a URL it can route
                         to — not only{" "}
                         <span className="font-mono">192.168.x.x</span>.
@@ -639,7 +649,7 @@ export function AddHostWizard() {
                         <strong className="font-medium text-foreground">
                           each machine where you want to run game servers
                         </strong>
-                        . Steamline is hosted at{" "}
+                        . The hosted dashboard is at{" "}
                         <span className="font-mono text-foreground/90">
                           {HOSTED_DASHBOARD_PUBLIC_URL}
                         </span>
@@ -736,5 +746,25 @@ export function AddHostWizard() {
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+export function OpenAddHostSheetButton({
+  children,
+  ...props
+}: ComponentProps<typeof Button>) {
+  return (
+    <Button
+      type="button"
+      {...props}
+      onClick={(e) => {
+        props.onClick?.(e);
+        if (!e.defaultPrevented) {
+          window.dispatchEvent(new CustomEvent(OPEN_ADD_HOST_SHEET_EVENT));
+        }
+      }}
+    >
+      {children}
+    </Button>
   );
 }

@@ -12,6 +12,7 @@ import { HostSteamSettings } from "@/components/host-steam-settings";
 import { HostResourcesPanel } from "@/components/host-resources-panel";
 import { HostAgentUpdatePanel } from "@/components/host-agent-update-panel";
 import { HostBackupPanel } from "@/components/host-backup-panel";
+import { HostDetailTabs } from "@/components/host-detail-tabs";
 import { HostTerminalPanel } from "@/components/host-terminal-panel";
 import { InstanceDeployProgress } from "@/components/instance-deploy-progress";
 import { InstanceLogsPanel } from "@/components/instance-logs-panel";
@@ -33,6 +34,7 @@ import {
   effectiveHostStatus,
   isHostHeartbeatFresh,
 } from "@/lib/host-presence";
+import { isHostDetailTabId } from "@/lib/host-detail-tabs";
 import { instanceDashboardStatusLabel } from "@/lib/instance-status-label";
 import { cn } from "@/lib/utils";
 
@@ -44,8 +46,10 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 export default async function HostDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ hostId: string }>;
+  searchParams?: Promise<{ tab?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) {
@@ -53,6 +57,11 @@ export default async function HostDetailPage({
   }
 
   const { hostId } = await params;
+  const sp = (await searchParams) ?? {};
+  const defaultTab =
+    typeof sp.tab === "string" && isHostDetailTabId(sp.tab)
+      ? sp.tab
+      : "overview";
 
   const rows = await db
     .select()
@@ -113,7 +122,7 @@ export default async function HostDetailPage({
         title={host.name}
         description={
           <span>
-            Agent status, live resource usage, and servers on this machine.{" "}
+            Metrics, instances, backups, and tools are grouped in tabs below.{" "}
             <Link className="text-primary underline" href="/docs/management">
               Host management guide
             </Link>
@@ -147,209 +156,220 @@ export default async function HostDetailPage({
             instanceTotal={instanceCount}
           />
         ) : null}
-        {host.status !== "pending" ? (
-          <HostResourcesPanel
-            metrics={host.hostMetrics}
-            lastSeenAt={host.lastSeenAt}
-          />
-        ) : (
-          <Card className="border-dashed border-amber-500/40 bg-amber-500/[0.06]">
-            <CardHeader>
-              <CardTitle className="text-base">Enrollment pending</CardTitle>
-              <CardDescription>
-                Run the install command from <strong>Add host</strong>. Metrics
-                will appear here after the agent connects.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="border-border/80">
-            <CardHeader>
-              <CardTitle className="text-base">Connection</CardTitle>
-              <CardDescription>Enrollment and identity</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">State</span>
-                <Badge variant="secondary">{displayHostStatus}</Badge>
-              </div>
-              {host.platformOs ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Platform</span>
-                  <span>
-                    {PLATFORM_LABEL[host.platformOs] ?? host.platformOs}
-                  </span>
-                </div>
-              ) : null}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Host ID</span>
-                <code className="max-w-[60%] truncate text-xs">{host.id}</code>
-              </div>
-              {host.agentVersion ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Agent</span>
-                  <span className="font-mono text-xs">{host.agentVersion}</span>
-                </div>
+        <HostDetailTabs
+          defaultTab={defaultTab}
+          overview={
+            <div className="space-y-6">
+              {host.status !== "pending" ? (
+                <HostResourcesPanel
+                  metrics={host.hostMetrics}
+                  lastSeenAt={host.lastSeenAt}
+                />
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  No agent version reported yet.
-                </p>
+                <Card className="border-dashed border-amber-500/40 bg-amber-500/[0.06]">
+                  <CardHeader>
+                    <CardTitle className="text-base">Enrollment pending</CardTitle>
+                    <CardDescription>
+                      Run the install command from <strong>Add host</strong>. Metrics
+                      will appear here after the agent connects.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
               )}
-              {host.lastSeenAt ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Last heartbeat</span>
-                  <span>
-                    {host.lastSeenAt.toLocaleString(undefined, {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
-                  </span>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">No heartbeat yet.</p>
-              )}
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Live updates use a browser connection to the dashboard; when the agent is
-                connected, changes usually appear within a few seconds. If “Last heartbeat”
-                never changes after the first line, the agent is not reaching the
-                API — check{" "}
-                <code className="rounded bg-muted px-1">~/.steamline/agent.log</code>{" "}
-                on the host and that{" "}
-                <code className="rounded bg-muted px-1">APP_PUBLIC_URL</code> is
-                reachable from that machine.
-              </p>
-              <HostAgentUpdatePanel
-                hostId={host.id}
-                platformOs={host.platformOs}
-                agentReachable={hostReachable}
-              />
-              <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
-                <span className="text-muted-foreground">Created</span>
-                <span>
-                  {host.createdAt.toLocaleString(undefined, {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-border/80">
-            <CardHeader>
-              <CardTitle className="text-base">Game servers</CardTitle>
-              <CardDescription>
-                Instances on this host ({instanceCount} total). The agent moves
-                them <span className="text-foreground">Queued</span> →{" "}
-                <span className="text-foreground">Installing</span> →{" "}
-                <span className="text-foreground">Install complete</span> (or{" "}
-                <span className="text-foreground">Deployed &amp; running</span>{" "}
-                if a start command was configured on the host).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {recentInstances.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No server instances yet.{" "}
-                  <Link href="/servers" className="text-primary underline">
-                    Create one in Servers
-                  </Link>
-                  .
-                </p>
-              ) : (
-                <ul className="space-y-4">
-                  {recentInstances.map((inst) => (
-                    <li
-                      key={inst.id}
-                      className="rounded-md border border-border/60 px-3 py-3 text-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate font-medium">{inst.name}</span>
-                            <Badge
-                              variant="outline"
-                              title={`API status: ${inst.status}`}
-                            >
-                              {instanceDashboardStatusLabel(
-                                inst.status,
-                                inst.provisionMessage
-                              )}
-                            </Badge>
+              <Card className="border-border/80">
+                <CardHeader>
+                  <CardTitle className="text-base">Connection</CardTitle>
+                  <CardDescription>Enrollment and identity</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">State</span>
+                    <Badge variant="secondary">{displayHostStatus}</Badge>
+                  </div>
+                  {host.platformOs ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Platform</span>
+                      <span>
+                        {PLATFORM_LABEL[host.platformOs] ?? host.platformOs}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Host ID</span>
+                    <code className="max-w-[60%] truncate text-xs">{host.id}</code>
+                  </div>
+                  {host.agentVersion ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Agent</span>
+                      <span className="font-mono text-xs">{host.agentVersion}</span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No agent version reported yet.
+                    </p>
+                  )}
+                  {host.lastSeenAt ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Last heartbeat</span>
+                      <span>
+                        {host.lastSeenAt.toLocaleString(undefined, {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No heartbeat yet.</p>
+                  )}
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Live updates use a browser connection to the dashboard; when the agent is
+                    connected, changes usually appear within a few seconds. If “Last heartbeat”
+                    never changes after the first line, the agent is not reaching the
+                    API — check{" "}
+                    <code className="rounded bg-muted px-1">~/.steamline/agent.log</code>{" "}
+                    on the host and that{" "}
+                    <code className="rounded bg-muted px-1">APP_PUBLIC_URL</code> is
+                    reachable from that machine.
+                  </p>
+                  <HostAgentUpdatePanel
+                    hostId={host.id}
+                    platformOs={host.platformOs}
+                    agentReachable={hostReachable}
+                  />
+                  <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+                    <span className="text-muted-foreground">Created</span>
+                    <span>
+                      {host.createdAt.toLocaleString(undefined, {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          }
+          servers={
+            <Card className="border-border/80">
+              <CardHeader>
+                <CardTitle className="text-base">Game servers</CardTitle>
+                <CardDescription>
+                  Instances on this host ({instanceCount} total). The agent moves
+                  them <span className="text-foreground">Queued</span> →{" "}
+                  <span className="text-foreground">Installing</span> →{" "}
+                  <span className="text-foreground">Install complete</span> (or{" "}
+                  <span className="text-foreground">Deployed &amp; running</span>{" "}
+                  if a start command was configured on the host).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {recentInstances.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No server instances yet.{" "}
+                    <Link href="/servers" className="text-primary underline">
+                      Create one in Servers
+                    </Link>
+                    .
+                  </p>
+                ) : (
+                  <ul className="space-y-4">
+                    {recentInstances.map((inst) => (
+                      <li
+                        key={inst.id}
+                        className="rounded-md border border-border/60 px-3 py-3 text-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="truncate font-medium">{inst.name}</span>
+                              <Badge
+                                variant="outline"
+                                title={`API status: ${inst.status}`}
+                              >
+                                {instanceDashboardStatusLabel(
+                                  inst.status,
+                                  inst.provisionMessage
+                                )}
+                              </Badge>
+                            </div>
                           </div>
+                          <DeleteInstanceButton
+                            instanceId={inst.id}
+                            instanceName={inst.name}
+                            status={inst.status}
+                            className="shrink-0"
+                          />
                         </div>
-                        <DeleteInstanceButton
-                          instanceId={inst.id}
-                          instanceName={inst.name}
-                          status={inst.status}
-                          className="shrink-0"
-                        />
-                      </div>
-                      <div className="mt-2">
-                        <InstancePowerControls
-                          instanceId={inst.id}
-                          instanceName={inst.name}
-                          status={inst.status}
-                          hostReachable={hostReachable}
-                          className="pb-2"
-                        />
-                        <InstanceDeployProgress
-                          key={`${inst.id}-${inst.updatedAt.toISOString()}`}
-                          instanceId={inst.id}
-                          initial={{
-                            id: inst.id,
-                            name: inst.name,
-                            status: inst.status,
-                            provisionMessage: inst.provisionMessage,
-                            lastError: inst.lastError,
-                            updatedAt: inst.updatedAt.toISOString(),
-                            catalogName: inst.catalogName,
-                            hostName: host.name,
-                            hostMetrics: host.hostMetrics,
-                            allocatedPorts: inst.allocatedPorts,
-                            hostReachable,
-                          }}
-                        />
-                        <InstanceLogsPanel instanceId={inst.id} />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                        <div className="mt-2">
+                          <InstancePowerControls
+                            instanceId={inst.id}
+                            instanceName={inst.name}
+                            status={inst.status}
+                            hostReachable={hostReachable}
+                            className="pb-2"
+                          />
+                          <InstanceDeployProgress
+                            key={`${inst.id}-${inst.updatedAt.toISOString()}`}
+                            instanceId={inst.id}
+                            initial={{
+                              id: inst.id,
+                              name: inst.name,
+                              status: inst.status,
+                              provisionMessage: inst.provisionMessage,
+                              lastError: inst.lastError,
+                              updatedAt: inst.updatedAt.toISOString(),
+                              catalogName: inst.catalogName,
+                              hostName: host.name,
+                              hostMetrics: host.hostMetrics,
+                              allocatedPorts: inst.allocatedPorts,
+                              hostReachable,
+                            }}
+                          />
+                          <InstanceLogsPanel instanceId={inst.id} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          }
+          backups={
+            <HostBackupPanel hostId={host.id} hostReachable={hostReachable} />
+          }
+          tools={
+            <div className="space-y-6">
+              <HostTerminalPanel
+                hostId={host.id}
+                platformOs={host.platformOs ?? null}
+                hostReachable={hostReachable}
+              />
 
-        <HostBackupPanel hostId={host.id} hostReachable={hostReachable} />
+              <HostLinuxRootAccess hostId={host.id} platformOs={host.platformOs} />
 
-        <HostTerminalPanel
-          hostId={host.id}
-          platformOs={host.platformOs ?? null}
-          hostReachable={hostReachable}
+              <Card className="border-border/80">
+                <CardHeader>
+                  <CardTitle className="text-base">Steam licensed installs</CardTitle>
+                  <CardDescription>
+                    Games such as Counter-Strike 2 need your Steam account for the
+                    download step. Enter your details here once — the enrolled agent
+                    pulls them automatically and writes its local env file. You do not
+                    need to SSH in or run installer commands for this.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <HostSteamSettings
+                    hostId={host.id}
+                    hostStatus={host.status}
+                    initialSteamUsername={host.steamUsername ?? null}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          }
         />
-
-        <HostLinuxRootAccess hostId={host.id} platformOs={host.platformOs} />
-
-        <Card className="border-border/80">
-          <CardHeader>
-            <CardTitle className="text-base">Steam licensed installs</CardTitle>
-            <CardDescription>
-              Games such as Counter-Strike 2 need your Steam account for the
-              download step. Enter your details here once — the enrolled agent
-              pulls them automatically and writes its local env file. You do not
-              need to SSH in or run installer commands for this.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            <HostSteamSettings
-              hostId={host.id}
-              hostStatus={host.status}
-              initialSteamUsername={host.steamUsername ?? null}
-            />
-          </CardContent>
-        </Card>
       </div>
     </>
   );

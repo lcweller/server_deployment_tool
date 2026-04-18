@@ -4,6 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { useHostRealtimeForHost } from "@/lib/realtime/use-host-realtime-events";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ export function HostRemovalStatus({
   const [status, setStatus] = useState(initialStatus);
   const [pendingDelete, setPendingDelete] = useState(instancesPendingDelete);
   const [total, setTotal] = useState(instanceTotal);
+  const [forceBusy, setForceBusy] = useState(false);
   const syncHost = useCallback(async () => {
     try {
       const res = await fetch(`/api/hosts/${hostId}`, { cache: "no-store" });
@@ -81,6 +83,31 @@ export function HostRemovalStatus({
     void syncHost();
   });
 
+  async function onForceRemoveFromDashboard() {
+    const ok = window.confirm(
+      "Remove this host from your Steamline account without waiting for the agent?\n\n" +
+        "Use this if the machine is offline, wiped, or the agent will never run again. " +
+        "This only deletes dashboard data — it does not uninstall anything on the server. " +
+        "Before enrolling the same machine again, delete ~/.steamline on it (or reinstall)."
+    );
+    if (!ok) return;
+    setForceBusy(true);
+    try {
+      const res = await fetch(`/api/hosts/${hostId}?force=1`, {
+        method: "DELETE",
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(j.error ?? `Remove failed (${res.status})`);
+        return;
+      }
+      router.push("/hosts");
+      router.refresh();
+    } finally {
+      setForceBusy(false);
+    }
+  }
+
   if (status !== "pending_removal") {
     return null;
   }
@@ -119,6 +146,23 @@ export function HostRemovalStatus({
             Status:{" "}
             <span className="font-mono text-foreground">pending_removal</span>
           </p>
+          <div className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-amber-600/40 text-amber-900 hover:bg-amber-500/15 dark:text-amber-100"
+              disabled={forceBusy}
+              onClick={() => void onForceRemoveFromDashboard()}
+            >
+              {forceBusy ? "Removing…" : "Remove from dashboard only"}
+            </Button>
+            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              For offline or decommissioned hosts: drops this host and its servers
+              from your account so you can enroll again. Does not touch the remote
+              machine.
+            </p>
+          </div>
         </div>
       </div>
     </div>

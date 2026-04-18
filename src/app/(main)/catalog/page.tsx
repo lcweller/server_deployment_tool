@@ -25,7 +25,7 @@ export default async function CatalogPage() {
     <>
       <PageHeader
         title="Game catalog"
-        description="Titles from the database, sorted by popularity score (seed + future ingestion pipeline)."
+        description="Games you can deploy to paired hosts. Sorted by catalog popularity (seed data and ingestion pipeline)."
       />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -69,7 +69,7 @@ export default async function CatalogPage() {
                           <Badge
                             variant="default"
                             className="text-[10px] font-normal"
-                            title="Steamline ships a built-in launch preset for this Steam App ID"
+                            title="GameServerOS ships a built-in launch preset for this Steam App ID"
                           >
                             Built-in preset
                           </Badge>

@@ -1,5 +1,6 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
+import { Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -44,14 +45,38 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  pending,
+  children,
+  disabled,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonPrimitive.Props &
+  VariantProps<typeof buttonVariants> & {
+    /** Shows a spinner and disables the control (form submit / async actions). */
+    pending?: boolean
+  }) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      data-pending={pending ? "" : undefined}
+      className={cn(
+        buttonVariants({ variant, size, className }),
+        pending && "pointer-events-none"
+      )}
+      disabled={disabled ?? pending}
       {...props}
-    />
+    >
+      {pending ? (
+        <span className="inline-flex items-center gap-2">
+          <Loader2
+            className="size-3.5 shrink-0 animate-spin"
+            aria-hidden
+          />
+          {children}
+        </span>
+      ) : (
+        children
+      )}
+    </ButtonPrimitive>
   )
 }
 
